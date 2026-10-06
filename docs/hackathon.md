@@ -1,72 +1,122 @@
 # Nebius × NVIDIA Global AI Hackathon
 
-**Track:** Personal AI
+**Chosen track:** Personal AI  
+**Repository:** [holeyfield33-art/autonomous-digital-resident](https://github.com/holeyfield33-art/autonomous-digital-resident)  
+**License:** Apache-2.0
 
-## Alignment with the Personal AI Track
+---
 
-The track calls for always-on private AI with:
+## Why this fits the Personal AI Track
 
-- persistent memory
-- reusable skills
-- chosen tool / information access
-- ability to carry out tasks across workflows
+The track asks for always-on private AI with:
 
-The Autonomous Digital Resident goes further: it does not wait for a human task queue. It wakes with identity + memory + tools + knowledge and **chooses** what is worth doing next. This matches the organizers’ stated preference for systems that “remember context across sessions and take real action” rather than a chatbot with a system prompt.
+- persistent memory  
+- reusable skills / tools  
+- chosen tool and information access  
+- work that continues across workflows and sessions  
 
-## Hard technical requirements (satisfied by design)
+Organizers emphasize systems that **remember across sessions and take real action**, not chatbots with a system prompt.
 
-1. **Runs on Nebius Token Factory or Nebius AI Cloud**  
-   The application makes runtime calls to the Nebius Token Factory OpenAI-compatible inference API.
+The Autonomous Digital Resident is built exactly on that axis:
 
-2. **Uses at least one NVIDIA open-source model**  
-   At least one Nemotron family model participates meaningfully in the decision / reasoning / generation loop (primary or fallback).
+| Track expectation | How this project meets it |
+|-------------------|---------------------------|
+| Always-on / continuous | Cyclic loop with configurable interval; no human prompt required per cycle |
+| Persistent memory | Aletheia Mneme (semantic + integrity) + local journal |
+| Tools & information access | Filesystem, shell, web, artifacts — chosen by the model each cycle |
+| Cross-session continuity | Identity (`SOUL.md`) + Mneme survive process restarts |
+| Real action | Structured tool execution that writes durable workspace artifacts |
 
-### Current model candidates (Token Factory)
+It deliberately goes **beyond** “assistant with memory”: there is no external task queue. The entity wakes, observes, and decides.
 
-| Model ID | Notes |
-|----------|-------|
-| `nvidia/Nemotron-3_5-Lightning` | Fast, low-cost MoE — excellent for always-on agent loops |
-| `nvidia/nemotron-3-super-120b-a12b` | Strong multi-agent / complex reasoning |
-| `nvidia/Nemotron-3-Ultra-550b-a55b` | Flagship when deep reasoning is required |
-| `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` | Compact alternative |
+---
 
-Default primary: `nvidia/Nemotron-3_5-Lightning` (cost/latency friendly for continuous cycles).
+## Hard technical requirements
 
-### API usage pattern
+### 1. Runs on Nebius Token Factory or Nebius AI Cloud
+
+**Satisfied:** every decision step issues a runtime inference call to the Nebius Token Factory OpenAI-compatible API.
 
 ```python
-from openai import OpenAI
+# agent/models/nebius.py (simplified)
 client = OpenAI(
-    base_url="https://api.tokenfactory.nebius.com/v1/",  # or regional
+    base_url=os.environ.get("NEBIUS_BASE_URL", "https://api.tokenfactory.nebius.com/v1/"),
     api_key=os.environ["NEBIUS_API_KEY"],
 )
 response = client.chat.completions.create(
-    model="nvidia/Nemotron-3_5-Lightning",
+    model="nvidia/Nemotron-3_5-Lightning",  # or configured primary
     messages=[...],
 )
 ```
 
-Nebius / NVIDIA usage is therefore **evident from the running architecture**, not bolted on at submission time.
+The entire app does not need to be hosted on Nebius compute as long as Token Factory is part of the running system — which it is on the critical path.
 
-## Submission checklist (preserved while building)
+### 2. Uses at least one NVIDIA open-source model
 
-- [ ] Working demo / test build
-- [ ] Public GitHub repository (this one)
-- [ ] Source + instructions to run
-- [ ] Open-source license (Apache-2.0)
-- [ ] README with setup & run instructions
-- [ ] Clear explanation of how Nebius and the NVIDIA model are used (this document + README)
-- [ ] Public demonstration video < 3 minutes
-- [ ] Identification of chosen track: **Personal AI**
-- [ ] Feedback about the Nebius / NVIDIA technologies used
+**Satisfied:** primary and fallback models are NVIDIA Nemotron family IDs served by Token Factory.
 
-## Judging dimensions
+| Role | Default model ID |
+|------|------------------|
+| Primary | `nvidia/Nemotron-3_5-Lightning` |
+| Fallback | `nvidia/nemotron-3-super-120b-a12b` |
 
-Projects are scored equally on:
+Other available Nemotron endpoints (e.g. Ultra, Nano) can be selected via `PRIMARY_MODEL` / `FALLBACK_MODEL` without code changes.
 
-1. Technological Implementation
-2. Design
-3. Potential Impact
-4. Quality of the Idea
+Nebius / NVIDIA usage is therefore **visible in the running architecture** (`agent/models/nebius.py` + every cycle log), not added as branding at submission time.
 
-The strongest Personal AI entries go beyond chatbots toward systems that remember across sessions and take real action. That is the explicit design goal of this experiment.
+---
+
+## Technologies mentioned by organizers (context)
+
+Examples such as NVIDIA NemoClaw, OpenShell, Hermes Agent, and Nebius Serverless are **options**, not mandatory combinations. This project prioritizes:
+
+- Token Factory inference (required path)  
+- Nemotron open models (required path)  
+- A real memory layer (Aletheia Mneme)  
+- A minimal, inspectable autonomous loop  
+
+Additional Nebius AI Cloud deployment (Serverless Jobs / Endpoints / DevPods) can be layered later if a hosted demo is needed; it is not required for eligibility given Token Factory runtime use.
+
+---
+
+## Submission checklist
+
+| Requirement | Status |
+|-------------|--------|
+| Working demo / test build | Runnable via `scripts/run_resident.py` (needs keys + Mneme) |
+| Public GitHub / GitLab / Bitbucket repo | This repository |
+| Source, assets, run instructions | README + docs |
+| Open-source license | Apache-2.0 |
+| README with setup and run instructions | Yes |
+| Clear explanation of Nebius + NVIDIA use | This doc + README |
+| Public demo video < 3 minutes | TODO before submission |
+| Identify track | **Personal AI** |
+| Feedback on Nebius/NVIDIA technologies | TODO at submission |
+
+---
+
+## Judging dimensions (equal weight)
+
+1. **Technological Implementation** — Token Factory + Nemotron on the decision path; Mneme memory; tool execution; durable workspace  
+2. **Design** — Identity-first loop; observe → decide → act → remember; constrained tools; inspectable journals  
+3. **Potential Impact** — Template for always-on personal agents that own continuity instead of waiting for prompts  
+4. **Quality of the Idea** — Agency without a task queue; “what does it choose to build?” as the research question  
+
+---
+
+## Suggested demo narrative (< 3 min)
+
+1. Show `SOUL.md` and empty-ish workspace  
+2. Start Mneme + set env keys  
+3. `python scripts/bootstrap.py` then `MAX_CYCLES=1 python scripts/run_resident.py`  
+4. Show console decision, `workspace/journal/cycle_00001.md`, any new artifact/project  
+5. Query Mneme for the stored experience / identity  
+6. Point at `agent/models/nebius.py` model IDs and Token Factory base URL  
+
+---
+
+## Feedback placeholders (fill at submission)
+
+- Token Factory latency / reliability for continuous agent loops: _TBD_  
+- Nemotron-3.5-Lightning suitability for tool-oriented autonomous cycles: _TBD_  
+- Gaps or wishes for agent-oriented APIs (native tool calling, longer sessions): _TBD_  
