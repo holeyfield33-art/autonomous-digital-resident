@@ -1,0 +1,13 @@
+# Optional local orchestration notes.
+# Aletheia Mneme is expected to already be running (Docker / Render / local uvicorn).
+# This file is a placeholder for future co-location of the Resident with supporting services.
+
+services:
+  resident:
+    build: .
+    env_file: .env
+    volumes:
+      - ./workspace:/app/workspace
+      - ./SOUL.md:/app/SOUL.md:ro
+    # Depends on an already-running Mneme instance reachable at MNEME_MCP_URL
+    restart: unless-stopped
