@@ -1,0 +1,48 @@
+[project]
+name = "autonomous-digital-resident"
+version = "0.1.0"
+description = "Always-on autonomous AI entity with persistent identity, memory, tools and self-directed work — Nebius × NVIDIA Hackathon"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "Autonomous Digital Resident Authors" }
+]
+dependencies = [
+    "openai>=1.40.0",
+    "httpx>=0.27.0",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0",
+    "rich>=13.0",
+    "tenacity>=8.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+mcp = [
+    "mcp>=1.0",
+]
+
+[project.scripts]
+resident = "scripts.run_resident:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["agent"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
