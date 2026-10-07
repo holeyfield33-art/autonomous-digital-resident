@@ -111,6 +111,28 @@ class FilesystemTools:
             "status": "written",
         }
 
+    def update_file(self, relative, content):
+        check_text(content)
+        path = self._safe(relative)
+        if not path.is_file() or path.is_symlink():
+            raise ValueError("Existing regular file required")
+        self._quota(len(content.encode()), path)
+        with path.open("w", encoding="utf-8", newline="\n") as stream:
+            stream.write(content)
+        return {
+            "path": relative,
+            "bytes_written": path.stat().st_size,
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "status": "updated",
+        }
+
+    def delete_file(self, relative):
+        path = self._safe(relative)
+        if not path.is_file() or path.is_symlink():
+            raise ValueError("Existing regular file required")
+        path.unlink()
+        return {"path": relative, "status": "deleted"}
+
     def append_file(self, relative, content):
         path = self._safe(relative)
         old = ""

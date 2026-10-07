@@ -20,8 +20,8 @@ Own Mneme keys <- memory outbox <- recorded outcomes <- validated JSON decision
 
 1. An OS file lock admits one runner for the exact state directory. Previously running cycles become interrupted; tools and paid requests are never replayed automatically.
 2. Wake loads the full operator identity (maximum 5,000 bytes), recent own cycles, local recall, workspace inventory and installed tool schemas. The outbox synchronizes bounded own records to authenticated local Mneme.
-3. Nemotron receives a bounded observation. Strict JSON specifies `summary`, `direction`, `intent`, `actions` and `next_wake_seconds`. Unknown fields, invalid types, excessive actions and malformed JSON fail visibly; no extraction or silent repair.
-4. Before each action, the controller writes a durable start event. Results are recorded and given back to the model within the same cycle, under a default two-step cap. Errors remain errors. The next wake is bounded and the operator interval is a floor.
+3. Nemotron receives a bounded observation that also includes the Resident-owned `workspace/consciousness/index.md` (seeded once). Strict JSON must specify `summary`, `direction`, `intent`, `actions` and `next_wake_seconds`. `intent` is a closed enum: explore | build | continue | abandon | rest. Unknown fields, invalid types, excessive actions and malformed JSON fail visibly. A single bounded repair attempt may be issued with the exact schema error; there is no silent extraction or multi-retry.
+4. Before each action, the controller writes a durable start event. Results are recorded and given back to the model within the same cycle, under a default two-step cap. Errors remain errors and now carry diagnostic detail. The next wake is bounded and the operator interval is a floor.
 5. Direction, short public summary, artifact hashes and actual results become local memory. A local journal retains events even if Mneme is down. Recent own exact keys can be read back from Mneme and compared with local records.
 6. A heartbeat updates every ten seconds. STOP, PAUSE, configured cycle limits and durable budget can end or suspend polling.
 

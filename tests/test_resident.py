@@ -78,6 +78,26 @@ def test_artifact_escape_and_overwrite_and_secret(tmp_path):
     assert "error" in ShellTools(tmp_path).run("python -c 'print(1)'")
 
 
+def test_update_and_delete_files_are_bounded(tmp_path):
+    fs = FilesystemTools(tmp_path / "workspace")
+    fs.write_file("notes.txt", "before")
+
+    result = fs.update_file("notes.txt", "after")
+    assert result["status"] == "updated"
+    assert fs.read_file("notes.txt")["content"] == "after"
+
+    result = fs.delete_file("notes.txt")
+    assert result["status"] == "deleted"
+    assert not fs.exists("notes.txt")["exists"]
+
+    with pytest.raises(ValueError):
+        fs.update_file("missing.txt", "new")
+    with pytest.raises(ValueError):
+        fs.delete_file("../outside.txt")
+    with pytest.raises(ValueError):
+        fs.delete_file("directory")
+
+
 def test_hardlink_refused(tmp_path):
     fs = FilesystemTools(tmp_path / "workspace")
     outside = tmp_path / "outside.txt"
@@ -149,6 +169,19 @@ def test_outbox_retries_only_own_memory(tmp_path):
 def test_schema_and_html_errors_are_data(tmp_path):
     with pytest.raises(ValueError):
         parse_decision('{"summary":"ok", "actions": [], "shell": "env"}')
+    # Intent must be the closed enum; prose must surface a diagnostic ValueError.
+    with pytest.raises(ValueError, match="intent"):
+        parse_decision(
+            json.dumps(
+                {
+                    "summary": "ok",
+                    "direction": "d",
+                    "intent": "Continue maintaining system health",
+                    "actions": [],
+                    "next_wake_seconds": 300,
+                }
+            )
+        )
     state = State(tmp_path)
     cycle = state.begin("demo")
     state.finish(cycle, "error", "<script>alert(1)</script>", "<b>fake</b>")
@@ -258,6 +291,7 @@ def test_tool_failure_is_structured_and_recoverable(tmp_path):
 def test_tool_list_matches_schemas(tmp_path):
     tools = build_default_registry(tmp_path)
     assert set(tools.list_tools()) == {s["name"] for s in tools.schemas()}
+    assert {"update_file", "delete_file"}.issubset(tools.list_tools())
     assert "shell" not in tools and "web_fetch" not in tools and "run_python" not in tools
 
 

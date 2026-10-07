@@ -48,7 +48,16 @@ def build_default_registry(workspace, state=None, knowledge=None, image=None, al
     fs = FilesystemTools(workspace)
     artifacts = ArtifactTools(workspace)
     reg = ToolRegistry()
-    for name in ("list_dir", "read_file", "write_file", "append_file", "mkdir", "exists"):
+    for name in (
+        "list_dir",
+        "read_file",
+        "write_file",
+        "update_file",
+        "delete_file",
+        "append_file",
+        "mkdir",
+        "exists",
+    ):
         reg.register(
             name, getattr(fs, name), "Resident workspace only; UTF-8, bounded, no hidden/link paths."
         )
