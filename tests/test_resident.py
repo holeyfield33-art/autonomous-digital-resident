@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
@@ -108,10 +109,18 @@ def test_atomic_budget_zero_and_ambiguous(tmp_path):
     with ThreadPoolExecutor(2) as pool:
         claims = list(pool.map(reserve, range(2)))
     assert sum(c is not None for c in claims) == 1
-    assert State(tmp_path / "shared", 1000).budget()["cap_usd"] == 0.0001
+    assert State(tmp_path / "shared", 1000).budget()["cap_usd"] == 1.0
     assert state.budget()["unresolved"] == 1
     state.settle(next(c for c in claims if c), 110, "provider")
     assert state.budget()["halted"]
+
+
+def test_explicit_budget_cap_can_raise_stale_cap(tmp_path):
+    State(tmp_path / "stale", 500_000)
+    state = State(tmp_path / "stale", 15_000_000)
+    assert state.budget()["cap_usd"] == 15.0
+    with pytest.raises(ValueError):
+        State(tmp_path / "stale", 10_000_000)
 
 
 def test_outbox_retries_only_own_memory(tmp_path):
@@ -145,6 +154,16 @@ def test_schema_and_html_errors_are_data(tmp_path):
     state.finish(cycle, "error", "<script>alert(1)</script>", "<b>fake</b>")
     html = render(state)
     assert "<script>" not in html and "&lt;script&gt;" in html
+
+
+def test_dashboard_tolerates_list_tool_results(tmp_path):
+    state = State(tmp_path)
+    cycle = state.begin("demo")
+    state.event(cycle, "tool_result", {"name": "filesystem", "result": ["not", "an", "object"]})
+    state.finish(cycle, "completed", "ok", "Done")
+    html = render(state)
+    assert "not</pre>" not in html
+    assert '"not"' in html and '"an"' in html and '"object"' in html
 
 
 def test_provider_usage_and_failure_hold(tmp_path):
@@ -189,6 +208,51 @@ def test_bad_decision_is_retained_and_failure_survives(tmp_path):
     assert result["status"] == "error"
     assert any(e["kind"] == "decision_raw" for e in state.events(1))
     assert "error" in state.recall()[0]["value"]
+
+
+def test_tool_failure_is_structured_and_recoverable(tmp_path):
+    class RecoveringModel(DemoModel):
+        def __init__(self):
+            self.calls = 0
+
+        async def chat(self, messages, cycle):
+            self.calls += 1
+            if self.calls == 1:
+                return json.dumps(
+                    {
+                        "summary": "Try the failing tool once.",
+                        "direction": "recover",
+                        "intent": "continue",
+                        "actions": [{"name": "read_file", "arguments": {"relative": "missing.txt"}}],
+                        "next_wake_seconds": 10,
+                    }
+                )
+            return json.dumps(
+                {
+                    "summary": "The failure was recorded and the cycle can continue.",
+                    "direction": "continue",
+                    "intent": "continue",
+                    "actions": [],
+                    "next_wake_seconds": 10,
+                }
+            )
+
+    soul = tmp_path / "SOUL.md"
+    soul.write_text("Recover safely.")
+    state = State(tmp_path / "state")
+    workspace = tmp_path / "workspace"
+    model = RecoveringModel()
+    loop = ResidentLoop(model, state, build_default_registry(workspace), soul, workspace, max_steps=2)
+
+    result = asyncio.run(loop.one_cycle())
+
+    assert result["status"] == "completed"
+    assert model.calls == 2
+    errors = [event for event in state.events(1) if event["kind"] == "tool_error"]
+    assert len(errors) == 1
+    assert errors[0]["payload"]["tool"] == "read_file"
+    assert errors[0]["payload"]["error"] == "FileNotFoundError"
+    assert errors[0]["payload"]["recovered"] is True
 
 
 def test_tool_list_matches_schemas(tmp_path):

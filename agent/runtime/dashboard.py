@@ -17,7 +17,8 @@ def render(state):
         tools = [e["payload"] for e in events if e["kind"] == "tool_result"]
         links = []
         for tool in tools:
-            path = tool.get("result", {}).get("path")
+            result = tool.get("result") if isinstance(tool, dict) else None
+            path = result.get("path") if isinstance(result, dict) else None
             if isinstance(path, str):
                 links.append(f"<a href='/artifact?path={quote(path, safe='')}'>{escape(path)}</a>")
         details = json.dumps(tools, ensure_ascii=False, indent=2)

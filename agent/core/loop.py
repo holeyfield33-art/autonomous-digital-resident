@@ -147,6 +147,18 @@ class ResidentLoop:
                     result = await asyncio.to_thread(self.tools.call, action.name, **action.arguments)
                     record = {"step": step, "index": index, "name": action.name, "result": result}
                     self.state.event(cycle, "tool_result", record)
+                    if isinstance(result, dict) and "error" in result:
+                        self.state.event(
+                            cycle,
+                            "tool_error",
+                            {
+                                "step": step,
+                                "tool": action.name,
+                                "error": result["error"],
+                                "detail": result.get("detail"),
+                                "recovered": True,
+                            },
+                        )
                     results.append(record)
                     outcomes.append(record)
                 status = "rested" if not decision.actions and not outcomes else "completed"
@@ -180,8 +192,6 @@ class ResidentLoop:
                 ]
                 if step == self.max_steps - 1:
                     status = "step_limit"
-            if any("error" in item["result"] for item in outcomes):
-                status = "tool_error"
             memory = json.dumps(
                 {
                     "cycle": cycle,

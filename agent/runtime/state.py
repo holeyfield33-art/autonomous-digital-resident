@@ -44,9 +44,12 @@ class State:
                 ("budget_halted", "false"),
             ):
                 db.execute("INSERT OR IGNORE INTO settings VALUES (?,?)", (key, value))
-            # A restart/config change can lower the cap, never silently raise it.
+            # Explicit configuration may raise a stale cap, but never lower it.
             current = int(db.execute("SELECT value FROM settings WHERE key='cap_micro'").fetchone()[0])
-            db.execute("UPDATE settings SET value=? WHERE key='cap_micro'", (str(min(current, cap_micro)),))
+            if cap_micro < current:
+                raise ValueError("Budget cap cannot be lowered below the durable value")
+            if cap_micro > current:
+                db.execute("UPDATE settings SET value=? WHERE key='cap_micro'", (str(cap_micro),))
 
     @contextmanager
     def db(self):
