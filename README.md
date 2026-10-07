@@ -1,335 +1,96 @@
 # Autonomous Digital Resident
 
-**NEBIUS × NVIDIA Global AI Hackathon — Personal AI Track**
+A persistent AI that chooses its own next direction, uses bounded tools, and leaves inspectable artifacts. Built for the Nebius × NVIDIA hackathon's Personal AI track.
 
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](pyproject.toml)
-[![Nebius Token Factory](https://img.shields.io/badge/Nebius-Token%20Factory-purple.svg)](https://tokenfactory.nebius.com)
-[![NVIDIA Nemotron](https://img.shields.io/badge/NVIDIA-Nemotron-76B900.svg)](https://nebius.com/services/token-factory/nemotron)
+The running system combines an operator-authored identity, its own durable memories, selected knowledge packs, NVIDIA Nemotron through Nebius Token Factory, and a dedicated workspace. No human task queue is required. The model may explore, build, continue, abandon a direction or rest. Its public summaries describe chosen actions; they are not evidence of consciousness.
 
-> An always-on autonomous AI entity with persistent identity, long-term memory, tools, and the freedom to choose its own work.
+Version 0.2 replaces the scaffold's host shell and placeholder MCP transport with durable state, real initialized MCP sessions, tool-result feedback and optional isolated execution. [Build review and remaining gaps](docs/BUILD_REPORT.md).
 
-This is **not** a chatbot waiting for prompts.  
-It is an experiment in continuity and agency:
+## Install and try it
 
-**What does an AI decide to do when nobody assigns it a task — but it has identity, memory, knowledge, tools, a real workspace, and the ability to create durable artifacts?**
+Python 3.11+; Docker is needed only for execution. Mneme is optional for the offline demo.
 
----
-
-## Table of contents
-
-1. [Idea](#idea)
-2. [How it works](#how-it-works)
-3. [Stack](#stack)
-4. [Project layout](#project-layout)
-5. [Prerequisites](#prerequisites)
-6. [Setup](#setup)
-7. [Running the Resident](#running-the-resident)
-8. [Tools available to the Resident](#tools-available-to-the-resident)
-9. [Memory (Aletheia Mneme)](#memory-aletheia-mneme)
-10. [Nebius × NVIDIA usage](#nebius--nvidia-usage)
-11. [Configuration](#configuration)
-12. [Observing the Resident](#observing-the-resident)
-13. [Hackathon notes](#hackathon-notes)
-14. [Documentation map](#documentation-map)
-15. [License](#license)
-16. [Status](#status)
-
----
-
-## Idea
-
-Most agents are task queues with a system prompt. The Resident is designed the other way around:
-
-| Conventional agent | Autonomous Digital Resident |
-|--------------------|-----------------------------|
-| Waits for a human prompt or job | Wakes and decides what is worth doing |
-| Context dies with the window | Identity + memory survive restarts |
-| Output is often chat | Prefers real artifacts in a workspace |
-| Tools are optional helpers | Tools are how it acts on the world |
-
-On every cycle the Resident:
-
-1. **Wakes** — loads `SOUL.md` and recent memory  
-2. **Observes** — workspace, Mneme history, available tools  
-3. **Decides** — NVIDIA Nemotron (via Nebius Token Factory) chooses the next action  
-4. **Acts** — executes structured tool calls (files, shell, web, artifacts)  
-5. **Remembers** — writes the cycle to Mneme and a local journal  
-
-No external task list is required.
-
----
-
-## How it works
-
-```text
-┌─────────────────────────────────────────────────────────────┐
-│                 Autonomous Digital Resident                 │
-│                                                             │
-│   SOUL.md ──► Identity                                      │
-│   Mneme   ──► Long-term memory (semantic + integrity)       │
-│   Nebius  ──► Nemotron models (decide / reason / write)     │
-│   Tools   ──► filesystem · shell · web · artifacts          │
-│   Workspace ► projects / experiments / journal / artifacts  │
-│                                                             │
-│              wake → observe → decide → act → remember       │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**Decision → action protocol.** The model is instructed to emit tool calls in a strict text format:
-
-```text
-TOOL_CALL
-{"name": "create_artifact", "arguments": {"name": "notes", "content": "..."}}
-END_TOOL_CALL
-```
-
-The loop parses every block, runs it through the tool registry, and records results. If no tool blocks appear, the cycle still stores the intention (so continuity is never lost).
-
----
-
-## Stack
-
-| Layer | Technology |
-|-------|------------|
-| Language | Python 3.11+ |
-| Inference | **Nebius Token Factory** (OpenAI-compatible API) |
-| Models | **NVIDIA Nemotron** family (e.g. `nvidia/Nemotron-3_5-Lightning`) |
-| Long-term memory | **[Aletheia Mneme](https://github.com/holeyfield33-art/Mneme-)** (FastMCP, PostgreSQL, pgvector, Helios) |
-| Local continuity | `workspace/journal/` cycle logs |
-| Packaging | `pyproject.toml` (hatchling) |
-| License | Apache-2.0 |
-
----
-
-## Project layout
-
-```text
-autonomous-digital-resident/
-├── SOUL.md                      # Living identity of the Resident
-├── README.md                    # This file
-├── LICENSE                      # Apache-2.0
-├── pyproject.toml
-├── .env.example                 # Required secrets & defaults
-├── configs/default.yaml         # Runtime defaults
-├── docker-compose.yml           # Optional local notes
-│
-├── docs/
-│   ├── architecture.md          # Design & loop details
-│   ├── hackathon.md             # Track alignment, Nebius/NVIDIA mapping
-│   └── mneme.md                 # Aletheia Mneme integration guide
-│
-├── agent/
-│   ├── core/
-│   │   ├── loop.py              # Autonomous cycle (observe → decide → act → remember)
-│   │   └── identity.py          # SOUL.md loader
-│   ├── memory/
-│   │   └── mneme_client.py      # HTTP/MCP client for Aletheia Mneme
-│   ├── models/
-│   │   └── nebius.py            # Nebius Token Factory + Nemotron client
-│   ├── tools/
-│   │   ├── registry.py          # Tool registration + schemas for the model
-│   │   ├── filesystem.py        # Safe workspace read/write
-│   │   ├── shell.py             # Allowlisted shell in workspace cwd
-│   │   ├── web.py               # HTTP(S) fetch
-│   │   └── artifacts.py         # Projects, experiments, dated artifacts
-│   ├── knowledge/packs/         # Optional knowledge packs
-│   └── runtime/                 # Session / scheduling hooks (extensible)
-│
-├── workspace/                   # The Resident's own filesystem
-│   ├── projects/
-│   ├── experiments/
-│   ├── journal/                 # Human-readable cycle logs
-│   └── artifacts/
-│
-└── scripts/
-    ├── bootstrap.py             # Seed identity into Mneme
-    └── run_resident.py          # Start the autonomous loop
-```
-
----
-
-## Prerequisites
-
-1. **Python 3.11+**
-2. **Nebius Token Factory API key** — [tokenfactory.nebius.com](https://tokenfactory.nebius.com)
-3. **Running Aletheia Mneme instance** — [github.com/holeyfield33-art/Mneme-](https://github.com/holeyfield33-art/Mneme-)  
-   (local uvicorn, Docker, or Render). You need the MCP URL and an API key (`PERSONAL_MODE` or a created key).
-
----
-
-## Setup
-
-```bash
+```powershell
 git clone https://github.com/holeyfield33-art/autonomous-digital-resident.git
 cd autonomous-digital-resident
-
-# Environment
-cp .env.example .env
-# Edit .env:
-#   NEBIUS_API_KEY=...
-#   MNEME_MCP_URL=http://localhost:8000/mcp   # or your hosted URL
-#   MNEME_API_KEY=mneme_p_...                 # or created key
-
-# Install
-pip install -e .
-# optional: pip install -e ".[dev]"
+py -3.11 -m venv .venv
+.\.venv\Scripts\python -m pip install -r requirements-lock.txt
+.\.venv\Scripts\python -m pip install --no-deps -e .
+.\.venv\Scripts\resident doctor
+.\.venv\Scripts\resident demo --interval 0
+.\.venv\Scripts\resident demo --interval 0
+.\.venv\Scripts\resident observe
 ```
 
-Confirm Mneme is healthy (example):
+Open **http://127.0.0.1:8766**. Both demo cycles create canned continuity artifacts, preserve increasing cycle IDs, and feed real write results back to the next canned decision. Demo is explicitly labeled and makes zero provider calls. On Linux use `.venv/bin/python` and `.venv/bin/resident`.
 
-```bash
-curl -s "$MNEME_MCP_URL/../health"   # or GET https://your-host/health
+## Live, self-directed operation
+
+Create a private `.env` using [.env.example](.env.example). Only live mode needs `NEBIUS_API_KEY`. Optional Mneme uses authenticated loopback MCP; this workspace's service is at `http://127.0.0.1:8010/mcp/`.
+
+```powershell
+# If an operator STOP/PAUSE marker exists:
+.\.venv\Scripts\resident resume --live
+# One cycle first; --cycles 0 means persistent polling under the same spend cap.
+.\.venv\Scripts\resident run --live --mneme --cycles 1
+.\.venv\Scripts\resident run --live --mneme --cycles 0 --interval 300
 ```
 
----
+Each cycle has at most two model calls by default and each decision permits at most four actions. The **durable default live cap is $0.50**. Reservations precede requests; unresolved requests retain their full reservation. No SDK retries or automatic model fallback. A restart cannot raise the stored cap. Accounting is conservative and is not a billing receipt. [Cost details](docs/RUN_MANUAL.md#spending).
 
-## Running the Resident
+Do not create alternate state directories to bypass this cap. Stop/pause checks prevent new actions and model calls between steps; an in-flight request may finish within its timeout.
 
-### 1. Bootstrap (once)
+## Watch what it does
 
-Seeds `identity/soul` and a first experience marker into Mneme:
-
-```bash
-python scripts/bootstrap.py
+```powershell
+# Separate terminal, correct live state:
+.\.venv\Scripts\resident observe --live
+.\.venv\Scripts\resident status --live
+# Operator controls:
+.\.venv\Scripts\resident pause --live
+.\.venv\Scripts\resident resume --live
+.\.venv\Scripts\resident stop --live
 ```
 
-### 2. Start the loop
+The dashboard refreshes every 15 seconds, shows heartbeat, chosen directions, actual tool results, errors and spend, and links to text-only artifact previews. It is read-only and bound to loopback.
 
-```bash
-python scripts/run_resident.py
-```
+- Live artifacts: `workspace/live/` (projects and artifacts are chosen by the model).
+- Full cycle records: `.resident/live/journal/cycle-XXXXXX.json`.
+- Durable identity, events, spend and local memory: `.resident/live/resident.sqlite`.
+- Demo state and workspace: `.resident/demo/` and `workspace/demo/`, separately.
+- Windows background operation: `.\scripts\local.ps1 start`; logs are named in `.resident/live/service.json`. See [the full manual](docs/RUN_MANUAL.md).
 
-Useful environment overrides:
+`--home .resident/live` now means that exact live state. The earlier scaffold incorrectly selected a nested demo directory; old nested records are preserved but are not the live Resident.
 
-| Variable | Meaning | Default |
-|----------|---------|---------|
-| `CYCLE_INTERVAL_SECONDS` | Pause between cycles | `300` |
-| `MAX_CYCLES` | Stop after N cycles (`0` = unlimited) | `0` |
-| `PRIMARY_MODEL` | Nemotron model id | `nvidia/Nemotron-3_5-Lightning` |
-| `LOG_LEVEL` | Logging verbosity | `INFO` |
-| `RESIDENT_WORKSPACE` | Workspace root | `./workspace` |
+## Tools and boundaries
 
-Example — one short cycle for a smoke test:
+| Capability | Scope |
+|---|---|
+| list/read/write/append/mkdir/exists | Dedicated workspace; bounded UTF-8, path/link/secret checks and quotas |
+| create_artifact/project/experiment | Actual files with recorded paths and content hashes |
+| recall | Only this Resident's committed cycle memories |
+| list/read_knowledge | Operator-selected packs; read-only and untrusted |
+| run_python | Opt-in immutable Docker image; one source file, no network/credentials, read-only input, bounded CPU/memory/time/output |
+| web_fetch | Opt-in exact operator-selected HTTPS URLs, no redirects or arbitrary model-generated URLs |
 
-```bash
-MAX_CYCLES=1 CYCLE_INTERVAL_SECONDS=1 python scripts/run_resident.py
-```
+The model cannot execute a host shell, access sibling memory, edit controller state or identity policy, install packages, commit/push code, or grant itself additional tools. It may write code as an artifact and execute a single standard-library Python file when the operator enables Docker execution. Exit status is execution evidence, not correctness proof.
 
----
+The controller runs on the host and the local operator is trusted. This is not a security claim against hostile host processes or kernel exploits. [Architecture and limitations](docs/architecture.md).
 
-## Tools available to the Resident
+## Memory and identity
 
-All tools are scoped to the workspace (or network fetch). The model sees schemas during **observe** and must emit `TOOL_CALL` blocks to use them.
+The full bounded `SOUL.md` is loaded every cycle. Recent local memories and past directions survive restarts. Mneme synchronizes this Resident's exact keys with store/read/integrity checks. An outage leaves a durable outbox; retries synchronize memory, not model requests or tools. Unrelated personal archives are never listed or forwarded to Nebius.
 
-| Tool | Purpose |
-|------|---------|
-| `list_dir` | List directory under workspace |
-| `read_file` | Read a text file |
-| `write_file` | Create/overwrite a file |
-| `append_file` | Append to a file |
-| `mkdir` | Create directories |
-| `exists` | Check path existence |
-| `shell` | Allowlisted commands (`ls`, `python`, `git status`, …) in workspace cwd |
-| `web_fetch` | Fetch public `http`/`https` pages |
-| `create_artifact` | Dated durable note under `workspace/artifacts/` |
-| `create_project` | New project stub under `workspace/projects/` |
-| `create_experiment` | Experiment log under `workspace/experiments/` |
+This local Mneme profile uses keyword fallback while offline. Do not describe it as live semantic embeddings. [Mneme guide](docs/mneme.md).
 
-Shell commands are deliberately restricted (allowlist + no dangerous chaining). Expand the allowlist only when you intend to.
+## Evidence, docs and submission
 
----
+- [Run manual](docs/RUN_MANUAL.md): installation, start/stop, observation, recovery, cost, Docker and Mneme.
+- [Architecture](docs/architecture.md): continuity, authority and decision contract.
+- [Build report](docs/BUILD_REPORT.md): scaffold findings, repairs and observed checks.
+- [Hackathon and project choice](docs/hackathon.md): deliverables and comparison with Repo Steward.
+- [Provenance](docs/PROVENANCE.md): source identities, official request pattern and licenses.
 
-## Memory (Aletheia Mneme)
+Tests: `python -m pytest -q -ra`; Docker tests explicitly skip unless `RESIDENT_TEST_IMAGE` names a trusted local image ID. A separate CI job exercises real Docker isolation without paid calls. This is a working bounded prototype; independent security review, a longer continuity trial, blind artifact-quality evaluation, judge-facing demo URL and public video remain open.
 
-Long-term memory is **[Aletheia Mneme](https://github.com/holeyfield33-art/Mneme-)**:
-
-- FastAPI + FastMCP gateway  
-- PostgreSQL + pgvector (HNSW semantic search)  
-- Helios SHA-256 content hashing for integrity  
-- 16 tools (store, search, relate, history, verify, export, …)  
-- `PERSONAL_MODE` for sovereign single-operator deployments  
-
-Each cycle stores an `experience` memory and a local markdown journal entry under `workspace/journal/`. See **[docs/mneme.md](docs/mneme.md)** for categories, tools, and connection details.
-
----
-
-## Nebius × NVIDIA usage
-
-Compliance is architectural, not cosmetic:
-
-1. **Runtime calls** go to Nebius Token Factory (`NEBIUS_BASE_URL`, default `https://api.tokenfactory.nebius.com/v1/`).
-2. **Primary reasoning model** is an NVIDIA open model from the Nemotron family.
-
-Default routing (overridable via env):
-
-| Role | Model ID |
-|------|----------|
-| Primary | `nvidia/Nemotron-3_5-Lightning` |
-| Fallback | `nvidia/nemotron-3-super-120b-a12b` |
-
-Implementation: `agent/models/nebius.py` → used on every **decide** step of the loop.  
-Full mapping to hackathon rules: **[docs/hackathon.md](docs/hackathon.md)**.
-
----
-
-## Configuration
-
-- **Secrets & endpoints:** `.env` (from `.env.example`)
-- **Structured defaults:** `configs/default.yaml`
-- **Identity:** edit `SOUL.md` (the Resident loads it every cycle)
-
-Do not commit real API keys.
-
----
-
-## Observing the Resident
-
-| Channel | Location |
-|---------|----------|
-| Console logs | stdout (`LOG_LEVEL`) |
-| Local journal | `workspace/journal/cycle_XXXXX.md` |
-| Artifacts / projects | `workspace/artifacts/`, `workspace/projects/`, `workspace/experiments/` |
-| Long-term memory | Mneme (`list_memories`, `semantic_search`, `export_memories`) |
-
-You can inspect journal files while the process is running; each cycle is self-contained.
-
----
-
-## Hackathon notes
-
-- **Track:** Personal AI  
-- **Repo:** public GitHub (this repository)  
-- **License:** Apache-2.0  
-- **Demo path:** run with `MAX_CYCLES=1` (or a short continuous run), show journal + Mneme memories + any artifacts created  
-- **Video / feedback:** see submission checklist in [docs/hackathon.md](docs/hackathon.md)
-
----
-
-## Documentation map
-
-| Document | Contents |
-|----------|----------|
-| [docs/architecture.md](docs/architecture.md) | Loop design, components, open research questions |
-| [docs/hackathon.md](docs/hackathon.md) | Track alignment, technical requirements, judging |
-| [docs/mneme.md](docs/mneme.md) | Aletheia Mneme connection, tools, categories |
-| [SOUL.md](SOUL.md) | Identity the Resident loads every cycle |
-
----
-
-## License
-
-Apache License 2.0 — see [LICENSE](LICENSE).
-
----
-
-## Status
-
-Working autonomous loop with:
-
-- Nebius Token Factory + NVIDIA Nemotron decision path  
-- Aletheia Mneme long-term memory client  
-- Filesystem, shell, web, and artifact tools  
-- Structured tool-call execution and local journaling  
-
-Actively developed for the Nebius × NVIDIA Global AI Hackathon (Personal AI Track).
+Apache-2.0: [LICENSE](LICENSE).

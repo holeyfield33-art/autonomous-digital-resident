@@ -1,31 +1,14 @@
-# Autonomous Digital Resident — default configuration
-
-identity:
-  soul_path: SOUL.md
-
-memory:
-  mneme:
-    url: ${MNEME_MCP_URL:-http://localhost:8000/mcp}
-    api_key: ${MNEME_API_KEY:-}
-  local_journal_dir: workspace/journal
-
-models:
-  primary: ${PRIMARY_MODEL:-nvidia/Nemotron-3_5-Lightning}
-  fallback: ${FALLBACK_MODEL:-nvidia/nemotron-3-super-120b-a12b}
-  nebius_base_url: ${NEBIUS_BASE_URL:-https://api.tokenfactory.nebius.com/v1/}
-  temperature: 0.7
-  max_tokens: 4096
-
-runtime:
-  workspace: ${RESIDENT_WORKSPACE:-./workspace}
-  cycle_interval_seconds: ${CYCLE_INTERVAL_SECONDS:-300}
-  max_cycles_per_run: 0          # 0 = unlimited
-  log_level: ${LOG_LEVEL:-INFO}
-
-tools:
-  enabled:
-    - filesystem
-    - shell
-    - web
-    - artifacts
-    - mneme
+# Reference only: executable defaults are resident --help (agent/cli.py).
+# YAML interpolation is not an implemented configuration interface.
+mode: demo
+cycles: 1
+steps_per_cycle: 2
+cycle_interval_seconds: 300
+durable_budget_usd: 0.50
+max_actions_per_step: 4
+max_request_bytes: 24000
+max_completion_tokens: 2048
+model: nvidia/nemotron-3-super-120b-a12b
+mneme_endpoint: http://127.0.0.1:8010/mcp/
+host_shell: disabled
+execution: opt-in-local-docker-image-id

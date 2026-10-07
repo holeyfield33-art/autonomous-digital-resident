@@ -1,122 +1,56 @@
-# Nebius × NVIDIA Global AI Hackathon
+# Hackathon readiness and project choice
 
-**Chosen track:** Personal AI  
-**Repository:** [holeyfield33-art/autonomous-digital-resident](https://github.com/holeyfield33-art/autonomous-digital-resident)  
-**License:** Apache-2.0
+Candidate: Autonomous Digital Resident, Personal AI track. Other candidate: Repo Steward / Descend, Coding and Agentic Engineering track. Final submission choice is not yet made.
 
----
+Official rules: https://nebiusglobalaihackathon.devpost.com/rules. Deadline verified October 30, 2026, 10:00 a.m. PDT. Runtime Token Factory inference qualifies; hosting every component on Nebius is unnecessary. Registration/eligibility/form submission remain human/account steps and are not inferred from code.
 
-## Why this fits the Personal AI Track
+## Actual technology use
 
-The track asks for always-on private AI with:
+Live Resident decisions use NVIDIA `nvidia/nemotron-3-super-120b-a12b` on Nebius Token Factory. Those decisions choose directions and structured actions; controller tools produce the artifacts. The offline demo uses a canned model and cannot establish required-technology use by itself. Real user-started live cycles are recorded locally.
 
-- persistent memory  
-- reusable skills / tools  
-- chosen tool and information access  
-- work that continues across workflows and sessions  
+Mneme stores own identity/cycle records on local PostgreSQL. The verified local profile uses keyword fallback, not external semantic embeddings. Docker executes optional generated Python with no host writes/network. No automatic model fallback or made-up scaffold model ID remains.
 
-Organizers emphasize systems that **remember across sessions and take real action**, not chatbots with a system prompt.
+## How to choose between projects
 
-The Autonomous Digital Resident is built exactly on that axis:
+| Criterion | Digital Resident | Repo Steward |
+|---|---|---|
+| Central story | Continuity and self-chosen work without an assigned task queue | Review a repository change and turn suspected defects into evidence/patches |
+| Current evidence | Durable demo/restart tests, real Mneme integration, real Docker probes and early live cycles | Frozen 105-call Super/Nano evaluation, original corpus, attack evidence and offline verified patches |
+| Main unresolved quality question | Does continued autonomous activity produce useful work rather than repetitive notes? | Do reviews generalize, abstain reliably and produce a verified live patch? |
+| Main engineering risk | Operational autonomy, memory freshness and bounded execution need an independent review | Narrow act scope and incomplete live review-to-act product integration |
+| Recommended track | Personal AI | Coding and Agentic Engineering |
 
-| Track expectation | How this project meets it |
-|-------------------|---------------------------|
-| Always-on / continuous | Cyclic loop with configurable interval; no human prompt required per cycle |
-| Persistent memory | Aletheia Mneme (semantic + integrity) + local journal |
-| Tools & information access | Filesystem, shell, web, artifacts — chosen by the model each cycle |
-| Cross-session continuity | Identity (`SOUL.md`) + Mneme survive process restarts |
-| Real action | Structured tool execution that writes durable workspace artifacts |
+Recommendation: complete a small observed Resident run and score actual artifacts before selecting. Prefer the Resident if it demonstrates useful self-chosen work continued across a process restart, with real actions and a clear interface. Prefer Steward if Resident activity stays repetitive and Steward's live verification/user workflow is stronger. Novelty alone is insufficient; measured product behavior should decide.
 
-It deliberately goes **beyond** “assistant with memory”: there is no external task queue. The entity wakes, observes, and decides.
+Keep both evidence histories separate. No parameter-size explanation, consciousness claim or broad autonomous-capability claim follows from these runs.
 
----
+## Selection trial
 
-## Hard technical requirements
+Use the existing durable $0.50 Resident cap, not a new uncapped session. Record the identity, model/protocol version, available knowledge/tools and starting accounting. No human artifact assignment.
 
-### 1. Runs on Nebius Token Factory or Nebius AI Cloud
+Observe several cycles, stop at a cycle boundary, restart the same identity, and observe continuation. Retain every failed cycle, unresolved request, direction change, tool result and artifact hash. Independently inspect artifacts for usefulness and correctness. Report supported scope, elapsed time, duplicate/repetitive work and spend. This is a pilot, not a controlled general capability benchmark. Longer operation or a new paid workload needs a concrete estimate under the chosen budget.
 
-**Satisfied:** every decision step issues a runtime inference call to the Nebius Token Factory OpenAI-compatible API.
+## Deliverables still open
 
-```python
-# agent/models/nebius.py (simplified)
-client = OpenAI(
-    base_url=os.environ.get("NEBIUS_BASE_URL", "https://api.tokenfactory.nebius.com/v1/"),
-    api_key=os.environ["NEBIUS_API_KEY"],
-)
-response = client.chat.completions.create(
-    model="nvidia/Nemotron-3_5-Lightning",  # or configured primary
-    messages=[...],
-)
-```
+- Judge-accessible working demo/test-build URL, checked from a fresh environment.
+- Public YouTube video under three minutes showing actual decisions, tool outcomes, artifacts and restart continuity.
+- Independent security review of controller, filesystem, Docker, MCP and observation surfaces.
+- A longer observed continuity trial and independently reviewed artifact quality.
+- Final track, description, registration/eligibility checks and submitted form/receipt.
+- Feedback grounded in actual Nebius/NVIDIA behavior and a dated prior-work disclosure.
 
-The entire app does not need to be hosted on Nebius compute as long as Token Factory is part of the running system — which it is on the critical path.
+The public repo, Apache-2.0 license, pinned installation, run manual and CI definitions are present. CI results must be observed after push, not assumed from the workflow file.
 
-### 2. Uses at least one NVIDIA open-source model
+## Three-minute demo outline
 
-**Satisfied:** primary and fallback models are NVIDIA Nemotron family IDs served by Token Factory.
+1. Explain the experiment and show identity/tool scope (20 seconds).
+2. Show a real live model choosing a direction without an assigned artifact task (40 seconds).
+3. Show actual tool results, created file and optional Docker output (60 seconds).
+4. Restart the same state and show remembered work/continuation (35 seconds).
+5. Show budget/error visibility and honest limits (20 seconds).
 
-| Role | Default model ID |
-|------|------------------|
-| Primary | `nvidia/Nemotron-3_5-Lightning` |
-| Fallback | `nvidia/nemotron-3-super-120b-a12b` |
+## Platform feedback notes
 
-Other available Nemotron endpoints (e.g. Ultra, Nano) can be selected via `PRIMARY_MODEL` / `FALLBACK_MODEL` without code changes.
+The official chat-completion pattern is simple to integrate. Strict JSON still needs controller validation; truncation/usage and ambiguous requests require explicit handling. Disable SDK retries and automatic fallback when accounting must be traceable. Separate model-produced pseudo-error text from transport failures. The initial scaffold used an unverified model identifier and MCP approximation; the working implementation uses an official documented model and initialized transport.
 
-Nebius / NVIDIA usage is therefore **visible in the running architecture** (`agent/models/nebius.py` + every cycle log), not added as branding at submission time.
-
----
-
-## Technologies mentioned by organizers (context)
-
-Examples such as NVIDIA NemoClaw, OpenShell, Hermes Agent, and Nebius Serverless are **options**, not mandatory combinations. This project prioritizes:
-
-- Token Factory inference (required path)  
-- Nemotron open models (required path)  
-- A real memory layer (Aletheia Mneme)  
-- A minimal, inspectable autonomous loop  
-
-Additional Nebius AI Cloud deployment (Serverless Jobs / Endpoints / DevPods) can be layered later if a hosted demo is needed; it is not required for eligibility given Token Factory runtime use.
-
----
-
-## Submission checklist
-
-| Requirement | Status |
-|-------------|--------|
-| Working demo / test build | Runnable via `scripts/run_resident.py` (needs keys + Mneme) |
-| Public GitHub / GitLab / Bitbucket repo | This repository |
-| Source, assets, run instructions | README + docs |
-| Open-source license | Apache-2.0 |
-| README with setup and run instructions | Yes |
-| Clear explanation of Nebius + NVIDIA use | This doc + README |
-| Public demo video < 3 minutes | TODO before submission |
-| Identify track | **Personal AI** |
-| Feedback on Nebius/NVIDIA technologies | TODO at submission |
-
----
-
-## Judging dimensions (equal weight)
-
-1. **Technological Implementation** — Token Factory + Nemotron on the decision path; Mneme memory; tool execution; durable workspace  
-2. **Design** — Identity-first loop; observe → decide → act → remember; constrained tools; inspectable journals  
-3. **Potential Impact** — Template for always-on personal agents that own continuity instead of waiting for prompts  
-4. **Quality of the Idea** — Agency without a task queue; “what does it choose to build?” as the research question  
-
----
-
-## Suggested demo narrative (< 3 min)
-
-1. Show `SOUL.md` and empty-ish workspace  
-2. Start Mneme + set env keys  
-3. `python scripts/bootstrap.py` then `MAX_CYCLES=1 python scripts/run_resident.py`  
-4. Show console decision, `workspace/journal/cycle_00001.md`, any new artifact/project  
-5. Query Mneme for the stored experience / identity  
-6. Point at `agent/models/nebius.py` model IDs and Token Factory base URL  
-
----
-
-## Feedback placeholders (fill at submission)
-
-- Token Factory latency / reliability for continuous agent loops: _TBD_  
-- Nemotron-3.5-Lightning suitability for tool-oriented autonomous cycles: _TBD_  
-- Gaps or wishes for agent-oriented APIs (native tool calling, longer sessions): _TBD_  
+Record further feedback from the Resident's actual run rather than transferring Steward's model scores to this project.

@@ -1,13 +1,13 @@
-# Optional local orchestration notes.
-# Aletheia Mneme is expected to already be running (Docker / Render / local uvicorn).
-# This file is a placeholder for future co-location of the Resident with supporting services.
-
+# Optional offline packaged demo; main live/Mneme profile runs on the host.
 services:
-  resident:
+  demo:
     build: .
-    env_file: .env
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp:size=32m]
     volumes:
-      - ./workspace:/app/workspace
-      - ./SOUL.md:/app/SOUL.md:ro
-    # Depends on an already-running Mneme instance reachable at MNEME_MCP_URL
-    restart: unless-stopped
+      - resident-demo-data:/data
+volumes:
+  resident-demo-data:

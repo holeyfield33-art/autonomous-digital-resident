@@ -1,0 +1,32 @@
+name: tests
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  protocol:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r requirements-lock.txt
+      - run: python -m pip install --no-deps -e .
+      - run: python -m ruff check agent scripts tests
+      - run: python -m pytest -q -ra -m "not docker"
+  physical-worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r requirements-lock.txt
+      - run: python -m pip install --no-deps -e .
+      - name: Resolve trusted worker image and exercise actual isolation
+        shell: bash
+        run: |
+          docker pull python:3.11-slim@sha256:0dd364ba7e10242f07755449e3a3d0e35f9efd987952737b90def6709ab0c5ce
+          export RESIDENT_TEST_IMAGE=$(docker image inspect python:3.11-slim@sha256:0dd364ba7e10242f07755449e3a3d0e35f9efd987952737b90def6709ab0c5ce --format '{{.Id}}')
+          python -m pytest -q -ra -m docker

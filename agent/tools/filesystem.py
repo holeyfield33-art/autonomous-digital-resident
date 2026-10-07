@@ -1,77 +1,129 @@
-"""Filesystem tools — the Resident can inspect and write its workspace."""
+"""Bounded workspace IO. The local operator is trusted; model paths are not."""
 
-from __future__ import annotations
-
+import hashlib
 import os
-from pathlib import Path
-from typing import Any
+import re
+import stat
+from pathlib import Path, PurePosixPath
+
+SECRET = re.compile(
+    r"""(?i)(?:api[_-]?key|access[_-]?token|password|private[_-]?key)\s*[=:]\s*['"]?[^\s'"]{8,}|-----BEGIN .*PRIVATE KEY-----|\b(?:ghp_|github_pat_|sk-)[A-Za-z0-9_-]{20,}"""
+)
+MAX_FILE = 100_000
+
+
+def check_text(text):
+    if not isinstance(text, str) or len(text.encode()) > MAX_FILE or SECRET.search(text):
+        raise ValueError("Text size or sensitive-content policy rejected input")
 
 
 class FilesystemTools:
-    def __init__(self, workspace: Path | str) -> None:
+    def __init__(self, workspace):
         self.workspace = Path(workspace).resolve()
         self.workspace.mkdir(parents=True, exist_ok=True)
 
-    def _safe(self, relative: str) -> Path:
-        """Resolve a path under workspace; reject escapes."""
-        target = (self.workspace / relative).resolve()
-        if not str(target).startswith(str(self.workspace)):
-            raise ValueError(f"Path escapes workspace: {relative}")
+    def _safe(self, relative):
+        if not isinstance(relative, str) or len(relative) > 240 or "\\" in relative or ":" in relative:
+            raise ValueError("Invalid workspace path")
+        parts = PurePosixPath(relative)
+        if parts.is_absolute() or any(p == ".." or p.startswith(".") for p in parts.parts):
+            raise ValueError("Workspace path rejected")
+        target = self.workspace.joinpath(*parts.parts)
+        current = self.workspace
+        for part in parts.parts:
+            current /= part
+            if current.is_symlink():
+                raise ValueError("Symlinks are not supported")
+            if current.exists():
+                info = current.lstat()
+                if getattr(info, "st_file_attributes", 0) & getattr(
+                    stat, "FILE_ATTRIBUTE_REPARSE_POINT", 1024
+                ):
+                    raise ValueError("Reparse points are not supported")
+                if current.is_file() and info.st_nlink > 1:
+                    raise ValueError("Hardlinked files are not supported")
+        target.resolve().relative_to(self.workspace)
         return target
 
-    def list_dir(self, relative: str = ".") -> dict[str, Any]:
-        path = self._safe(relative)
-        if not path.exists():
-            return {"error": f"Not found: {relative}"}
-        if not path.is_dir():
-            return {"error": f"Not a directory: {relative}"}
+    def list_dir(self, relative="."):
         entries = []
-        for p in sorted(path.iterdir()):
-            entries.append({
-                "name": p.name,
-                "type": "dir" if p.is_dir() else "file",
-                "size": p.stat().st_size if p.is_file() else None,
-            })
-        return {"path": relative, "entries": entries}
+        with os.scandir(self._safe(relative)) as scan:
+            for entry in scan:
+                if len(entries) >= 100:
+                    break
+                if not entry.name.startswith("."):
+                    entries.append(
+                        {
+                            "name": entry.name,
+                            "type": "link"
+                            if entry.is_symlink()
+                            else "dir"
+                            if entry.is_dir(follow_symlinks=False)
+                            else "file",
+                        }
+                    )
+        return {"path": relative, "entries": sorted(entries, key=lambda e: e["name"]), "limit": 100}
 
-    def read_file(self, relative: str, max_chars: int = 50_000) -> dict[str, Any]:
-        path = self._safe(relative)
-        if not path.exists() or not path.is_file():
-            return {"error": f"File not found: {relative}"}
-        text = path.read_text(encoding="utf-8", errors="replace")
-        truncated = len(text) > max_chars
+    def read_file(self, relative, max_chars=12000):
+        if type(max_chars) is not int or not 1 <= max_chars <= 16000:
+            raise ValueError("Read limit must be 1..16000")
+        with self._safe(relative).open("rb") as stream:
+            raw = stream.read(MAX_FILE + 1)
+        if len(raw) > MAX_FILE:
+            raise ValueError("File exceeds read cap")
+        text = raw.decode("utf-8")
+        check_text(text)
         return {
             "path": relative,
             "content": text[:max_chars],
-            "truncated": truncated,
-            "chars": len(text),
+            "truncated": len(text) > max_chars,
+            "sha256": hashlib.sha256(raw).hexdigest(),
         }
 
-    def write_file(self, relative: str, content: str, overwrite: bool = True) -> dict[str, Any]:
+    def _quota(self, size, target):
+        count, total, directories = 0, size, 0
+        for folder, dirs, files in os.walk(self.workspace, followlinks=False):
+            dirs[:] = [d for d in dirs if not (Path(folder) / d).is_symlink()]
+            directories += len(dirs)
+            for name in files:
+                path = Path(folder) / name
+                count += 1
+                if path != target:
+                    total += path.lstat().st_size
+            if count >= 1000 or total > 10_000_000 or directories >= 200:
+                raise ValueError("Workspace quota reached")
+
+    def write_file(self, relative, content, overwrite=False):
+        check_text(content)
+        if type(overwrite) is not bool:
+            raise ValueError("overwrite must be boolean")
         path = self._safe(relative)
         if path.exists() and not overwrite:
-            return {"error": f"File exists and overwrite=False: {relative}"}
+            raise ValueError("File exists; explicitly set overwrite=true")
+        self._quota(len(content.encode()), path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
-        return {"path": relative, "bytes_written": len(content.encode("utf-8")), "status": "ok"}
-
-    def append_file(self, relative: str, content: str) -> dict[str, Any]:
-        path = self._safe(relative)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as f:
-            f.write(content)
-        return {"path": relative, "status": "appended"}
-
-    def mkdir(self, relative: str) -> dict[str, Any]:
-        path = self._safe(relative)
-        path.mkdir(parents=True, exist_ok=True)
-        return {"path": relative, "status": "ok"}
-
-    def exists(self, relative: str) -> dict[str, Any]:
-        path = self._safe(relative)
+        with path.open("w" if overwrite else "x", encoding="utf-8", newline="\n") as stream:
+            stream.write(content)
         return {
             "path": relative,
-            "exists": path.exists(),
-            "is_file": path.is_file() if path.exists() else False,
-            "is_dir": path.is_dir() if path.exists() else False,
+            "bytes_written": path.stat().st_size,
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "status": "written",
         }
+
+    def append_file(self, relative, content):
+        path = self._safe(relative)
+        old = ""
+        if path.exists():
+            if path.stat().st_size > MAX_FILE:
+                raise ValueError("File exceeds cap")
+            old = path.read_text(encoding="utf-8")
+        return self.write_file(relative, old + content, overwrite=True)
+
+    def mkdir(self, relative):
+        self._quota(0, self._safe(relative))
+        self._safe(relative).mkdir(parents=True, exist_ok=True)
+        return {"path": relative, "status": "created"}
+
+    def exists(self, relative):
+        return {"path": relative, "exists": self._safe(relative).exists()}
