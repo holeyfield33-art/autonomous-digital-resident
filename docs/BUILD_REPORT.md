@@ -43,6 +43,27 @@ wheel. From `/tmp`, its installed `resident` entry point completed an offline
 cycle using packaged fallback identity/knowledge, zero provider calls. These
 checks do not imply hosted deployment or independent review.
 
+Linux installed-package protocol validation subsequently passed **19 tests**,
+with two physical-worker tests deselected. The external mounted-test invocation
+emitted two marker-registration warnings because repository pytest configuration
+was not mounted; no test failed.
+
+Published implementation checkpoint: `f668b22`. GitHub's
+[first CI run](https://github.com/holeyfield33-art/autonomous-digital-resident/actions/runs/37556956271)
+could not start any of its three jobs. Each job's check annotation states:
+"The job was not started because your account is locked due to a billing issue."
+This is an external CI execution blocker, not a passing hosted check or a test
+failure observed on a runner. Local Windows/controller, Linux/package and actual
+Linux worker checks above passed. Resolve the account issue and run CI again;
+do not disable required checks to hide the blocker.
+
+Corrected live restart retained resident ID and all prior records. Cycle 5
+completed two actual Nemotron decisions, read knowledge and inspected workspace,
+with Mneme synchronization and a healthy heartbeat. It ended at the step cap,
+not a tool/provider error. Accounting checkpoint: ten reservations, $0.067274,
+one prior unresolved hold, $0.50 durable cap. Polling remains running with a
+300-second minimum interval. This observation is not a usefulness benchmark.
+
 1. Independent security review and broader physical adversarial coverage; current worker uses Docker's default seccomp, not Steward's stricter allowlist.
 2. A longer continuity pilot, quality/usefulness scoring, repetitions and rest/abandon behavior.
 3. No learned reusable skill registry yet; source artifacts and knowledge reading exist.

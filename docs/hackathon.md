@@ -41,6 +41,10 @@ Observe several cycles, stop at a cycle boundary, restart the same identity, and
 
 The public repo, Apache-2.0 license, pinned installation, run manual and CI definitions are present. CI results must be observed after push, not assumed from the workflow file.
 
+Current CI blocker: GitHub reports that its jobs cannot start because the account
+is locked due to a billing issue. Local checks pass; hosted CI is not green.
+See the exact run and local verification evidence in [BUILD_REPORT.md](BUILD_REPORT.md).
+
 ## Three-minute demo outline
 
 1. Explain the experiment and show identity/tool scope (20 seconds).

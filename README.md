@@ -93,4 +93,9 @@ This local Mneme profile uses keyword fallback while offline. Do not describe it
 
 Tests: `python -m pytest -q -ra`; Docker tests explicitly skip unless `RESIDENT_TEST_IMAGE` names a trusted local image ID. A separate CI job exercises real Docker isolation without paid calls. This is a working bounded prototype; independent security review, a longer continuity trial, blind artifact-quality evaluation, judge-facing demo URL and public video remain open.
 
+Local verification passed: 21 tests including real Docker probes, plus 19 Linux
+installed-package protocol tests. GitHub's jobs are currently blocked from
+starting by an account billing lock; hosted CI is not green. Details and the
+live restart checkpoint are in [the build report](docs/BUILD_REPORT.md).
+
 Apache-2.0: [LICENSE](LICENSE).
