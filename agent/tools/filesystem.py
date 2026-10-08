@@ -1,5 +1,7 @@
 """Workspace IO. The local operator is trusted; model paths are not."""
 
+import ast
+import difflib
 import fnmatch
 import hashlib
 import os
@@ -41,6 +43,52 @@ def _sha(path):
 
 def _mtime(path):
     return datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat(timespec="seconds")
+
+
+def _syntax(path, content):
+    """Parse (never run) a written .py file so a broken write is reported in the same step."""
+    if path.suffix != ".py":
+        return {}
+    try:
+        ast.parse(content, filename=path.name)
+    except SyntaxError as exc:
+        return {
+            "syntax": "error",
+            "syntax_error": {
+                "line": exc.lineno,
+                "message": exc.msg,
+                "text": redact((exc.text or "").rstrip()[:200]),
+            },
+            "hint": "The file was saved but does not parse; read_file around that line and fix it before running.",
+        }
+    return {"syntax": "ok"}
+
+
+def _closest(text, old_text):
+    """The file window most similar to old_text, for an actionable edit_file miss."""
+    lines, wanted = text.splitlines(keepends=True), old_text.splitlines(keepends=True)
+    size = max(1, len(wanted))
+    if not lines or len(lines) > 20_000:
+        return None
+    best, best_ratio = None, 0.0
+    matcher = difflib.SequenceMatcher(autojunk=False)
+    matcher.set_seq2(old_text)
+    for start in range(max(1, len(lines) - size + 1)):
+        window = "".join(lines[start : start + size])
+        matcher.set_seq1(window)
+        if matcher.real_quick_ratio() <= best_ratio or matcher.quick_ratio() <= best_ratio:
+            continue
+        ratio = matcher.ratio()
+        if ratio > best_ratio:
+            best, best_ratio = (start, window), ratio
+    if best is None or best_ratio < 0.5:
+        return None
+    start, window = best
+    return {
+        "closest_match": redact(window[:3000]),
+        "closest_lines": [start + 1, min(start + size, len(lines))],
+        "similarity": round(best_ratio, 2),
+    }
 
 
 class FilesystemTools:
@@ -164,7 +212,12 @@ class FilesystemTools:
         target.parent.mkdir(parents=True, exist_ok=True)
         with target.open("w", encoding="utf-8", newline="\n") as stream:
             stream.write(content)
-        return {"path": self._rel(target), "bytes": target.stat().st_size, "sha256": _sha(target)}
+        return {
+            "path": self._rel(target),
+            "bytes": target.stat().st_size,
+            "sha256": _sha(target),
+            **_syntax(target, content),
+        }
 
     def write_file(self, path: str, content: str, overwrite: bool = False):
         """Create a file (parents created). Set overwrite=true to replace an existing file."""
@@ -208,7 +261,13 @@ class FilesystemTools:
         text = target.read_text(encoding="utf-8")
         count = text.count(old_text)
         if count == 0:
-            raise ValueError(f"old_text not found in {path}; read_file it and copy the exact text")
+            near = _closest(text, old_text)
+            error = ValueError(
+                f"old_text not found in {path}; "
+                + ("copy closest_match exactly as old_text" if near else "read_file it and copy the exact text")
+            )
+            error.details = near or {}
+            raise error
         if count > 1 and not replace_all:
             raise ValueError(f"old_text matches {count} places; include more context or set replace_all=true")
         updated = text.replace(old_text, new_text) if replace_all else text.replace(old_text, new_text, 1)

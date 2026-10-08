@@ -6,6 +6,7 @@ Controller state, credentials and the Docker socket are never mounted.
 
 import shutil
 import subprocess
+import time
 from pathlib import Path, PurePosixPath
 
 from agent.tools.filesystem import redact
@@ -13,6 +14,9 @@ from agent.tools.filesystem import redact
 IMAGE = "resident-sandbox:latest"
 DOCKERFILE_DIR = Path(__file__).resolve().parents[2] / "sandbox"
 MAX_OUTPUT = 20000
+READY_SECONDS = 300  # trust a verified-running container this long before inspecting again
+EXEC_OVERHEAD = 30  # host-side slack beyond the in-container timeout; Docker Desktop can be slow
+GONE = (b"No such container", b"is not running", b"is paused")
 
 
 def _clip(data):
@@ -28,6 +32,7 @@ class Sandbox:
         self.workspace = Path(workspace).resolve()
         self.name, self.network, self.memory, self.cpus = name, network, memory, cpus
         self.docker = shutil.which("docker")
+        self._ready_at = None
 
     def _docker(self, *args, timeout=60, stdin=None):
         if not self.docker:
@@ -45,12 +50,22 @@ class Sandbox:
             raise RuntimeError("Sandbox image build failed: " + result.stderr.decode(errors="replace")[-2000:])
 
     def running(self):
-        result = self._docker("inspect", "-f", "{{.State.Running}}", self.name, timeout=30)
+        try:
+            result = self._docker("inspect", "-f", "{{.State.Running}}", self.name, timeout=60)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(
+                "Docker did not answer within 60s (the host is busy); the sandbox was not changed. "
+                "Retry the command in a later step."
+            ) from None
         return result.returncode == 0 and result.stdout.strip() == b"true"
 
     def ensure(self):
-        if self.running():
+        if self._ready_at is not None and time.monotonic() - self._ready_at < READY_SECONDS:
             return
+        if self.running():
+            self._ready_at = time.monotonic()
+            return
+        self._ready_at = None
         self._docker("rm", "-f", self.name, timeout=30)
         if not self.image_exists():
             self.build()
@@ -67,6 +82,7 @@ class Sandbox:
         result = self._docker(*args, IMAGE, timeout=120)
         if result.returncode:
             raise RuntimeError("Sandbox start failed: " + result.stderr.decode(errors="replace")[-1000:])
+        self._ready_at = time.monotonic()
 
     def status(self):
         try:
@@ -86,16 +102,24 @@ class Sandbox:
         rel = PurePosixPath(cwd or ".")
         if rel.is_absolute() or ".." in rel.parts:
             raise ValueError("cwd must be relative to /workspace")
-        self.ensure()
         workdir = str(PurePosixPath("/workspace") / rel)
-        try:
-            result = self._docker(
-                "exec", "-i", "-w", workdir, self.name, *argv, timeout=timeout + 5, stdin=stdin
-            )
-        except subprocess.TimeoutExpired:
-            # Kill whatever is still running from this call; the container itself survives.
-            self._docker("exec", self.name, "pkill", "-f", "-9", "resident-exec", timeout=15)
-            return {"status": "timeout", "exit_code": None, "output": f"Timed out after {timeout}s"}
+        for attempt in range(2):
+            self.ensure()
+            try:
+                result = self._docker(
+                    "exec", "-i", "-w", workdir, self.name, *argv, timeout=timeout + EXEC_OVERHEAD, stdin=stdin
+                )
+            except subprocess.TimeoutExpired:
+                # Kill whatever is still running from this call; the container itself survives.
+                try:
+                    self._docker("exec", self.name, "pkill", "-f", "-9", "resident-exec", timeout=30)
+                except subprocess.TimeoutExpired:
+                    pass
+                return {"status": "timeout", "exit_code": None, "output": f"Timed out after {timeout}s"}
+            if attempt == 0 and result.returncode and any(marker in result.stderr for marker in GONE):
+                self._ready_at = None  # container stopped since it was verified; recreate and retry once
+                continue
+            break
         output, clipped = _clip(result.stdout + (b"\n[stderr]\n" + result.stderr if result.stderr else b""))
         status = {0: "ok", 124: "timeout"}.get(result.returncode, "failed")
         return {
@@ -116,9 +140,8 @@ class Sandbox:
         """Run Python source code in the sandbox (passed on stdin, so no shell quoting needed)."""
         if not isinstance(code, str) or not code.strip():
             raise ValueError("code must be non-empty Python source")
-        return self._exec(
-            ["timeout", str(timeout), "python", "-"], cwd, timeout, stdin=code.encode("utf-8")
-        )
+        script = f"exec -a resident-exec timeout {timeout} python -"
+        return self._exec(["bash", "-c", script], cwd, timeout, stdin=code.encode("utf-8"))
 
 
 def _quote(text):

@@ -140,10 +140,12 @@ class ToolRegistry:
                 result = {**result, "note": f"{tool_name!r} is not a tool; ran {name!r} instead"}
             return result
         except Exception as exc:
+            details = getattr(exc, "details", None)
             return {
                 "error": type(exc).__name__,
                 "message": self._clean(str(exc)) or type(exc).__name__,
                 "usage": self.usage(name),
+                **(details if isinstance(details, dict) else {}),
             }
 
     def __contains__(self, name):
