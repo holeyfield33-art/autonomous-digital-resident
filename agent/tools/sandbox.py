@@ -1,9 +1,12 @@
 """The Resident's persistent Linux sandbox: a long-lived container with the workspace at /workspace.
 
-Installed packages and files outside /workspace persist until the container is recreated.
+pip and npm installs go to a per-sandbox volume at /opt/deps and survive container recreation;
+apt installs and other files outside /workspace last until the container is recreated.
 Controller state, credentials and the Docker socket are never mounted.
 """
 
+import os
+import re
 import shutil
 import subprocess
 import time
@@ -17,6 +20,23 @@ MAX_OUTPUT = 20000
 READY_SECONDS = 300  # trust a verified-running container this long before inspecting again
 EXEC_OVERHEAD = 30  # host-side slack beyond the in-container timeout; Docker Desktop can be slow
 GONE = (b"No such container", b"is not running", b"is paused")
+NAME = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$")
+DEPS = "/opt/deps"
+DEPS_ENV = {
+    "PIP_USER": "1",
+    "PYTHONUSERBASE": f"{DEPS}/python",
+    "NPM_CONFIG_PREFIX": f"{DEPS}/npm",
+    "NODE_PATH": f"{DEPS}/npm/lib/node_modules",
+    # The sandbox is root by design; these warnings only cost the model tokens.
+    "PIP_ROOT_USER_ACTION": "ignore",
+    "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+}
+# Login shells reset PATH from /etc/profile, so the deps bin dirs are added via profile.d.
+DEPS_PROFILE = f"export PATH={DEPS}/python/bin:{DEPS}/npm/bin:$PATH\n"
+
+
+def _same_path(a, b):
+    return os.path.normcase(os.path.normpath(str(a))) == os.path.normcase(os.path.normpath(str(b)))
 
 
 def _clip(data):
@@ -29,8 +49,11 @@ def _clip(data):
 
 class Sandbox:
     def __init__(self, workspace, name="resident-sandbox", network=True, memory="2g", cpus="2"):
+        if not isinstance(name, str) or not NAME.match(name):
+            raise ValueError("Sandbox name must be 1-63 characters: letters, digits, '_', '.', '-'")
         self.workspace = Path(workspace).resolve()
         self.name, self.network, self.memory, self.cpus = name, network, memory, cpus
+        self.volume = f"{name}-deps"
         self.docker = shutil.which("docker")
         self._ready_at = None
 
@@ -49,24 +72,40 @@ class Sandbox:
         if result.returncode:
             raise RuntimeError("Sandbox image build failed: " + result.stderr.decode(errors="replace")[-2000:])
 
-    def running(self):
+    def _inspect(self):
+        """(exists, running, host path mounted at /workspace) for this sandbox's container."""
+        template = '{{.State.Running}}|{{range .Mounts}}{{if eq .Destination "/workspace"}}{{.Source}}{{end}}{{end}}'
         try:
-            result = self._docker("inspect", "-f", "{{.State.Running}}", self.name, timeout=60)
+            result = self._docker("inspect", "-f", template, self.name, timeout=60)
         except subprocess.TimeoutExpired:
             raise RuntimeError(
                 "Docker did not answer within 60s (the host is busy); the sandbox was not changed. "
                 "Retry the command in a later step."
             ) from None
-        return result.returncode == 0 and result.stdout.strip() == b"true"
+        if result.returncode:
+            return False, False, None
+        running, _, source = result.stdout.decode(errors="replace").strip().partition("|")
+        return True, running == "true", source or None
+
+    def running(self):
+        return self._inspect()[1]
 
     def ensure(self):
         if self._ready_at is not None and time.monotonic() - self._ready_at < READY_SECONDS:
             return
-        if self.running():
+        exists, running, source = self._inspect()
+        if exists and not (source and _same_path(source, self.workspace)):
+            # Another resident's sandbox: never run in it, and never remove it.
+            raise RuntimeError(
+                f"Container {self.name!r} belongs to a different workspace ({source}); "
+                "give this resident its own sandbox name"
+            )
+        if running:
             self._ready_at = time.monotonic()
             return
         self._ready_at = None
-        self._docker("rm", "-f", self.name, timeout=30)
+        if exists:
+            self._docker("rm", "-f", self.name, timeout=30)
         if not self.image_exists():
             self.build()
         args = [
@@ -75,21 +114,30 @@ class Sandbox:
             "--memory", self.memory, "--cpus", self.cpus, "--pids-limit", "512",
             "--security-opt", "no-new-privileges:true",
             "--mount", f"type=bind,source={self.workspace},target=/workspace",
+            "--mount", f"type=volume,source={self.volume},target={DEPS}",
             "--restart", "unless-stopped",
         ]
+        for key, value in DEPS_ENV.items():
+            args += ["-e", f"{key}={value}"]
         if not self.network:
             args += ["--network", "none"]
         result = self._docker(*args, IMAGE, timeout=120)
         if result.returncode:
             raise RuntimeError("Sandbox start failed: " + result.stderr.decode(errors="replace")[-1000:])
+        self._docker(
+            "exec", "-i", self.name, "sh", "-c", "cat > /etc/profile.d/resident-deps.sh",
+            stdin=DEPS_PROFILE.encode(), timeout=60,
+        )
         self._ready_at = time.monotonic()
 
     def status(self):
         try:
             return {
                 "available": bool(self.docker),
+                "name": self.name,
                 "running": self.running(),
                 "image": IMAGE,
+                "deps_volume": self.volume,
                 "network": "internet" if self.network else "none",
                 "workspace_mount": "/workspace",
             }
@@ -130,7 +178,8 @@ class Sandbox:
         }
 
     def shell(self, command: str, timeout: int = 120, cwd: str = "."):
-        """Run a bash command in your Linux sandbox (cwd relative to /workspace). Internet, pip, apt, git available."""
+        """Run a bash command in your Linux sandbox (cwd relative to /workspace). Internet, pip, npm, apt, git available.
+        `pip install` and `npm install -g` persist in /opt/deps across sandbox resets; apt installs may not."""
         if not isinstance(command, str) or not command.strip():
             raise ValueError("command must be a non-empty string")
         script = f"exec -a resident-exec timeout {timeout} bash -lc {_quote(command)}"

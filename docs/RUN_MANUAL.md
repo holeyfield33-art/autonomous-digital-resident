@@ -4,7 +4,7 @@
 
 Python 3.11+ on Windows or Linux. Use the repository's dedicated virtual environment. Install `requirements-lock.txt`, then `pip install --no-deps -e .`. The installed entry point is `agent.cli:main`; packaged identity and knowledge are available even outside the source checkout. MCP is pinned to 1.30.0, matching the local verified transport API.
 
-`.env` uses literal allowlisted assignments, without variable interpolation. Existing process variables take precedence. Required for live: `NEBIUS_API_KEY`. Optional memory: `MNEME_MCP_URL`, `MNEME_API_KEY` or `MNEME_LOCAL_API_KEY`, or `MNEME_LOCAL_CONFIG`. Optional execution: `RESIDENT_EXECUTION_IMAGE`. Unknown/incomplete assignments fail startup; no secret values are printed.
+`.env` uses literal allowlisted assignments, without variable interpolation. Existing process variables take precedence. Required for live: `NEBIUS_API_KEY`. Optional memory: `MNEME_MCP_URL` and `MNEME_API_KEY`, the Resident's own agent key (see [mneme.md](mneme.md)). Optional web search providers: `TAVILY_API_KEY` or `BRAVE_API_KEY` (otherwise DuckDuckGo HTML, keyless). Legacy offline execution: `RESIDENT_EXECUTION_IMAGE`. Unknown/incomplete assignments fail startup; no secret values are printed.
 
 Run `resident doctor` for a no-cost runtime check. Use `resident demo` twice to verify increasing cycle IDs and durable artifacts. Canned choices are demo plumbing, never autonomy evidence.
 
@@ -14,17 +14,17 @@ From the repository:
 
 ```powershell
 .\.venv\Scripts\resident status --live
-.\.venv\Scripts\resident plan --live --cycles 3 --steps 2
+.\.venv\Scripts\resident plan --live --cycles 3 --steps 8
 .\.venv\Scripts\resident resume --live
-.\.venv\Scripts\resident run --live --mneme --cycles 0 --interval 300
+.\.venv\Scripts\resident run --live --mneme --sandbox --cycles 0 --steps 8 --interval 900
 ```
 
-`--cycles 0` means persistent polling, bounded by the ledger. The model may request a longer sleep; the operator interval is a floor. A cap exhaustion cycle stops the runner.
+`--cycles 0` means persistent polling, bounded by the ledger. Each wake runs up to `--steps` decisions (1..40) and stops early when the Resident replies with no actions, or at `--max-tool-calls` (60) or `--max-wake-seconds` (1200). Control commands (`status`, `stop`, `pause`, `resume`) keep the stored budget cap; pass `--budget-usd` only to raise it. The model may request a longer sleep; the operator interval is a floor. A cap exhaustion cycle stops the runner.
 
 Windows background launch uses `scripts/local.ps1`:
 
 ```powershell
-.\scripts\local.ps1 start -MnemeConfig ..\Mneme-\.local\settings.json
+.\scripts\local.ps1 start -Sandbox -Steps 8 -Interval 900   # also: -BudgetUsd 15, -NoWeb
 .\scripts\local.ps1 status
 .\scripts\local.ps1 pause
 .\scripts\local.ps1 resume
@@ -56,39 +56,52 @@ State parent `--home .resident` plus `--live` and exact `--home .resident/live` 
 
 ## Spending
 
-Default durable cap: $0.50. Maximum reservation per request: $0.068480. Three cycles × two steps permit at most six requests, conservatively $0.410880 if every request hits its bound, subject to existing usage/holds. Actual requests generally reserve less because input bodies are smaller. There are zero automatic provider retries and zero fallback requests.
+Default durable cap for new state: $0.50 (the live Resident's stored cap is $15; the CLI maximum is $20). Each request reserves `(request bytes + 8192 + 8192 output tokens) × $0.000002` before it is sent, and settles to reported usage afterwards. The request ceiling is 400,000 bytes. Within a wake the conversation grows with each step: a measured 12-step wake reached about 75 KB per request and settled at $0.34. Older results are compacted beyond about 90 KB. Cost scales roughly with steps × wakes per hour, so the interval is the main lever.
 
-Usage settlement is conservative accounting at $0.000002 per token, not a provider invoice. Missing/ambiguous usage retains a hold. Do not release an unresolved hold without independent provider evidence. Changing a CLI cap cannot raise the stored cap; creating a new state to evade it is not a supported budget-management procedure. This ledger is separate from Descend's previous experiments.
+There are zero automatic provider retries. One repair request is made only when a decision fails to parse. Usage settlement is conservative accounting, not a provider invoice. Missing or ambiguous usage retains a hold; do not release an unresolved hold without independent provider evidence. Creating a new state directory to evade the cap is not a supported budget-management procedure.
 
-## Enable isolated Python creation
+## Sandbox (shell and python)
 
-```powershell
-docker pull python:3.11-slim
-$image = (docker image inspect python:3.11-slim --format '{{.Id}}').Trim()
-# Pass the inspected immutable ID explicitly:
-.\.venv\Scripts\resident run --live --mneme --cycles 1 --execution-image $image
-```
-
-The model sees run_python only when an image is supplied. One source file, UTF-8, standard library, up to 16,000 characters; no writable host mounts or network. Files created inside the worker disappear. The model can save stdout to its workspace in a later action. Docker Desktop must be using Linux containers. The image is never pulled by the model.
-
-Test the actual boundary:
+`--sandbox` gives the Resident a persistent Linux container named `resident-sandbox`, built from `sandbox/Dockerfile` on first use:
 
 ```powershell
-$env:RESIDENT_TEST_IMAGE = $image
-.\.venv\Scripts\python -m pytest -q -ra
-.\.venv\Scripts\ruff check agent scripts tests
+.\.venv\Scripts\resident sandbox --live          # build/start and print status
+docker exec -it resident-sandbox bash            # look around as the operator
+docker rm -f resident-sandbox                    # reset: installed packages are lost, workspace is kept
 ```
 
-Without the explicit test image, the two physical Docker tests report skips; protocol tests still run. CI runs a separate physical job, with no API keys/calls.
+- The workspace (`workspace/live`) is bind-mounted at `/workspace`, so files created by `shell`/`python` are the same files the file tools see.
+- The container has outbound internet, pip, apt, git, node and common Python libraries. Limits: 2 GB RAM, 2 CPUs, 512 processes, per-command timeout up to 900 s.
+- Controller state, `.env`, credentials and the Docker socket are never mounted. Add `--sandbox-offline` to run it with `--network none`.
+- It runs as root inside the container with default Docker isolation. Anything in the workspace can leave over the network, so keep secrets out of the workspace.
+
+Without `--sandbox`, an explicit `--execution-image sha256:...` still provides the older offline `python` tool (one workspace `.py` file, standard library, no network).
+
+`pip install` and `npm install -g` go to a per-sandbox Docker volume (`<sandbox-name>-deps`, mounted at `/opt/deps`), so they survive `docker rm -f` and a rebuild. apt packages last only until the container is recreated. A container created before this change has no deps volume until it is recreated.
+
+## Running a second resident
+
+Each resident is a separate state directory, workspace, sandbox and budget. Residents can share `.env` (Nebius and Mneme keys): Mneme records are prefixed with each resident's own ID. `-Name b` maps to `.resident/b/live`, `workspace/b` and container `resident-sandbox-b`, and requires an explicit `-Soul`:
+
+```powershell
+.\scripts\local.ps1 start -Name b -Soul souls\b.md -Sandbox -Steps 8 -Interval 900 -BudgetUsd 15
+.\scripts\local.ps1 status -Name b
+.\scripts\local.ps1 observe -Name b -Port 8767
+.\scripts\local.ps1 stop -Name b
+```
+
+Without `-Name` the script controls the original resident exactly as before. A sandbox refuses to use, or remove, a container whose `/workspace` mount belongs to another workspace. An explicit `--soul` path that does not exist stops startup instead of falling back to the packaged soul. Each sandbox is capped at 2 CPUs and 2 GB, so two residents can claim all 4 CPUs of the Docker VM when both are busy.
+
+Tests: `.\.venv\Scripts\python -m pytest -q -ra` and `.\.venv\Scripts\ruff check agent scripts tests`. The two physical Docker tests for the legacy runner skip unless `RESIDENT_TEST_IMAGE` is set.
 
 ## Recovery and troubleshooting
 
 - No new cycles: check STOP, PAUSE, heartbeat, runner logs and available budget.
 - Duplicate-run refusal: inspect the existing process/state; do not delete its lock or start alternate state to duplicate spending.
-- Mneme outage/authentication failure: cycle memory remains local and outbox error records only an exception type; correct configuration, then sync. No other user's records are retrieved.
+- Mneme outage/authentication failure: cycle memory remains local and the outbox records only an exception type. `memory_sync` showing `degraded_local` / `ExceptionGroup` usually means a rejected key: rotate it with Mneme's `scripts/agent_key.py`, restart, then `resident sync --live --mneme`. No other namespace's records are ever retrieved.
 - Provider failure: retain raw public response/error and reservation. Later cycles are new attempts, never automatic SDK retries. Inspect unresolved holds before increasing workloads.
-- Malformed decision or incomplete output: failed cycle stays visible; no silent JSON/Python repair.
-- Tool error: inspect tool result and policy/schema. Host shell is unavailable. Changing controller permissions based on a model request is not an implemented operation.
+- Malformed decision or incomplete output: decisions are decoded against a JSON schema by the provider. If one still fails to parse, the raw output is kept, deterministic fixes are recorded in `decision_normalized`, and one repair request is made with full context. If that also fails, the wake ends with status `protocol_error`.
+- Tool error: the model receives the exception type, message and correct usage, and usually corrects itself in the next step. `tool_error` events and the facts block's `recent_tool_errors` show them. There is no host shell; `shell` runs only in the sandbox. Changing controller permissions based on a model request is not an implemented operation.
 - Crash: OS lock releases; prior running cycles become interrupted. Tool-start events with no result indicate uncertainty, not permission to replay.
 - Backup: stop cleanly, copy the complete private state directory and workspace; keep matching resident ID and memory keys. Do not publish SQLite, journals, logs, .env or generated work without privacy/provenance review.
 

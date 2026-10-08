@@ -74,7 +74,7 @@ def parser():
         help="State parent, or exact mode directory such as .resident/live",
     )
     p.add_argument("--workspace", type=Path, help="Dedicated resident-owned directory")
-    p.add_argument("--soul", type=Path, default=Path("SOUL.md"))
+    p.add_argument("--soul", type=Path, help="Identity file (default SOUL.md, else the packaged soul)")
     p.add_argument("--knowledge", type=Path, default=Path(__file__).parent / "knowledge" / "packs")
     p.add_argument("--cycles", type=int, default=1, help="0 polls until stopped or spending is exhausted")
     p.add_argument("--steps", type=int, default=12, choices=range(1, 41), metavar="1..40")
@@ -82,6 +82,9 @@ def parser():
     p.add_argument("--max-wake-seconds", type=int, default=1200, help="Per-wake wall-clock limit")
     p.add_argument("--sandbox", action="store_true", help="Give the Resident its persistent Docker sandbox")
     p.add_argument("--sandbox-offline", action="store_true", help="Run the sandbox with --network none")
+    p.add_argument(
+        "--sandbox-name", default="resident-sandbox", help="Container name; each resident needs its own"
+    )
     p.add_argument("--no-web", action="store_true", help="Disable web_search/web_fetch")
     p.add_argument("--interval", type=int, default=300)
     p.add_argument(
@@ -122,17 +125,20 @@ async def operate(args, state, workspace):
             state.remember(
                 f"resident/{state.resident_id}/identity/{hashlib.sha256(soul.encode()).hexdigest()}", soul
             )
-        print(json.dumps(await sync_outbox(state, memory)))
+        result = await sync_outbox(state, memory)
+        while args.command == "sync" and result.get("mode") == "mneme" and result.get("synced"):
+            result = await sync_outbox(state, memory)  # drain the whole backlog
+        print(json.dumps(result))
         return
     model = NebiusClient(state) if args.live else DemoModel()
     image = args.execution_image or os.environ.get("RESIDENT_EXECUTION_IMAGE")
     sandbox = None
     if args.sandbox:
-        sandbox = Sandbox(workspace, network=not args.sandbox_offline)
+        sandbox = Sandbox(workspace, name=args.sandbox_name, network=not args.sandbox_offline)
         await asyncio.to_thread(sandbox.ensure)
     web = None if args.no_web else WebTools(args.source_url)
     tools = build_default_registry(workspace, state, args.knowledge, image, web=web, sandbox=sandbox)
-    soul_path = args.soul if args.soul.exists() else Path(__file__).parent / "default_soul.md"
+    soul_path = args.soul
     loop = ResidentLoop(
         model,
         state,
@@ -168,6 +174,10 @@ def main():
         cap = Decimal(args.budget_usd)
         if not cap.is_finite() or not 0 <= cap <= 20:
             raise SystemExit("Budget must be finite and between $0 and $20")
+    if args.soul is None:
+        args.soul = Path("SOUL.md") if Path("SOUL.md").exists() else Path(__file__).parent / "default_soul.md"
+    elif not args.soul.is_file():
+        raise SystemExit(f"Soul file not found: {args.soul}")
     mode, root = resolve_mode_home(args.home, args.live)
     args.live = mode == "live"
     if args.command == "demo" and args.live:
@@ -196,7 +206,7 @@ def main():
             )
         )
     elif args.command == "sandbox":
-        sandbox = Sandbox(workspace, network=not args.sandbox_offline)
+        sandbox = Sandbox(workspace, name=args.sandbox_name, network=not args.sandbox_offline)
         sandbox.ensure()
         print(json.dumps(sandbox.status(), indent=2))
     elif args.command == "observe":
@@ -252,6 +262,7 @@ def main():
         # SDK debug logs can include remote payloads; never enable them by default.
         logging.getLogger("httpx").setLevel(logging.WARNING)
         logging.getLogger("httpx2").setLevel(logging.WARNING)
+        logging.getLogger("mcp").setLevel(logging.WARNING)
         try:
             asyncio.run(operate(args, state, workspace))
         except KeyboardInterrupt:
