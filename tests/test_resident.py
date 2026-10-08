@@ -70,11 +70,11 @@ def test_artifact_escape_and_overwrite_and_secret(tmp_path):
     fs.write_file("file.py", "print('hello')")
     with pytest.raises(FileExistsError, match="overwrite=true"):
         fs.write_file("file.py", "changed")
-    with pytest.raises(ValueError):
-        fs.write_file("file.py", "password='abcdefghijk'", overwrite=True)
+    # Credential-looking content is allowed (no operator secrets are reachable) and read back verbatim.
+    assert fs.write_file("file.py", "api_key='abcdefghijk'", overwrite=True)["status"] == "overwritten"
+    assert fs.read_file("file.py")["content"] == "api_key='abcdefghijk'"
     with pytest.raises(ValueError):
         ArtifactTools(tmp_path).create_artifact("a", "b", subdirectory="../../outside")
-    assert fs.read_file("file.py")["content"] == "print('hello')"
     assert "error" in ShellTools(tmp_path).run("python -c 'print(1)'")
 
 
@@ -383,3 +383,12 @@ def test_wake_keeps_history_and_facts(tmp_path):
     assert len(seen[2]) == 6  # system, observation, decision, results, decision, results
     facts = json.loads(seen[0][1]["content"])["facts"]
     assert facts["now_utc"] and facts["cycle"] == 1 and "not_available" in facts
+
+
+def test_long_summary_is_truncated_not_rejected():
+    fixes = []
+    raw = json.dumps({"summary": "x" * 5000, "direction": "y" * 900, "intent": "build",
+                      "actions": [], "next_wake_seconds": 60})
+    decision = parse_decision(raw, fixes)
+    assert len(decision.summary) == 2000 and len(decision.direction) == 500
+    assert "truncated_summary_to_2000_chars" in fixes

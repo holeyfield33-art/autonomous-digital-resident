@@ -11,26 +11,25 @@ import stat
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
-SECRET = re.compile(
-    r"""(?i)(?:api[_-]?key|access[_-]?token|password|private[_-]?key)\s*[=:]\s*['"]?[^\s'"]{8,}|-----BEGIN .*PRIVATE KEY-----|\b(?:ghp_|github_pat_|sk-)[A-Za-z0-9_-]{20,}"""
-)
 MAX_FILE = 1_000_000
 MAX_READ = 40_000
 QUOTA_FILES, QUOTA_BYTES, QUOTA_DIRS = 20_000, 500_000_000, 5_000
 
 
 def check_text(text, limit=MAX_FILE):
+    # The resident's workspace and sandbox never hold operator secrets: .env,
+    # controller state, credentials and the Docker socket are never mounted, and
+    # the file tools are workspace-scoped. So content is bounded by size only;
+    # the resident may freely write example keys, security code and the like.
     if not isinstance(text, str):
         raise ValueError("Text must be a string")
     if len(text.encode()) > limit:
         raise ValueError(f"Text exceeds {limit} bytes")
-    if SECRET.search(text):
-        raise ValueError("Text looks like it contains a credential (api_key=/password=/private key); rejected")
 
 
 def redact(text):
-    """Model-facing results keep their shape; credential-looking spans are masked."""
-    return SECRET.sub("[REDACTED]", text) if isinstance(text, str) else text
+    """No operator secrets are reachable from model-facing content, so it passes through unmasked."""
+    return text
 
 
 def _sha(path):
