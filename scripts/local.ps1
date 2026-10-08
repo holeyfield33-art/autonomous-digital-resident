@@ -3,6 +3,10 @@ param(
     [string]$MnemeConfig = '',
     [string]$ExecutionImage = '',
     [int]$Interval = 300,
+    [int]$Steps = 12,
+    [string]$BudgetUsd = '15',
+    [switch]$Sandbox,
+    [switch]$NoWeb,
     [int]$Port = 8766
 )
 $ErrorActionPreference = 'Stop'
@@ -32,7 +36,9 @@ try {
     }
     & $pythonPath -m agent.cli resume --live
     if ($LASTEXITCODE -ne 0) { throw 'Could not clear operator STOP/PAUSE markers.' }
-    $arguments = @('-m','agent.cli','run','--live','--mneme','--cycles','0','--interval',"$Interval")
+    $arguments = @('-m','agent.cli','run','--live','--mneme','--cycles','0','--interval',"$Interval",'--steps',"$Steps",'--budget-usd',$BudgetUsd)
+    if ($Sandbox) { $arguments += '--sandbox' }
+    if ($NoWeb) { $arguments += '--no-web' }
     if ($MnemeConfig) { $arguments += @('--mneme-config',('"' + $MnemeConfig + '"')) }
     if ($ExecutionImage) { $arguments += @('--execution-image',$ExecutionImage) }
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'

@@ -36,7 +36,9 @@ Create a private `.env` using [.env.example](.env.example). Only live mode needs
 .\.venv\Scripts\resident run --live --mneme --cycles 0 --interval 300
 ```
 
-Each cycle has at most two model calls by default and each decision permits at most four actions. The **durable default live cap is $0.50**. Reservations precede requests; unresolved requests retain their full reservation. No SDK retries or automatic model fallback. A restart cannot raise the stored cap. Accounting is conservative and is not a billing receipt. [Cost details](docs/RUN_MANUAL.md#spending).
+Each wake runs up to `--steps` decisions (default 12, max 40), each with up to six actions, and the model keeps its full conversation within the wake. Per-wake limits: `--max-tool-calls` (60) and `--max-wake-seconds` (1200). Decisions are decoded against a JSON schema by the provider; any remaining normalization is recorded as a `decision_normalized` event next to the raw output. The **durable default live cap is $0.50**. Reservations precede requests; unresolved requests retain their full reservation. No SDK retries or automatic model fallback. Accounting is conservative and is not a billing receipt. [Cost details](docs/RUN_MANUAL.md#spending).
+
+Add `--sandbox` to give the Resident its own persistent Linux container (`sandbox/Dockerfile`, built on first use or with `resident sandbox --live`). Web search/fetch are on unless `--no-web`.
 
 Do not create alternate state directories to bypass this cap. Stop/pause checks prevent new actions and model calls between steps; an in-flight request may finish within its timeout.
 
@@ -66,14 +68,17 @@ The dashboard refreshes every 15 seconds, shows heartbeat, chosen directions, ac
 
 | Capability | Scope |
 |---|---|
-| list/read/write/append/mkdir/exists | Dedicated workspace; bounded UTF-8, path/link/secret checks and quotas |
+| list_dir/read_file/write_file/edit_file/append_file/update_file/move/copy/delete/mkdir/exists/file_info/find_files/search_text | Workspace only; path/link checks, quotas, line ranges, exact-text edits |
 | create_artifact/project/experiment | Actual files with recorded paths and content hashes |
-| recall | Only this Resident's committed cycle memories |
+| search_memory/cycle_history/get_cycle | Full-text search of this Resident's own memories; per-wake replay from controller events |
+| system_status | Controller facts: time, budget, limits, capabilities, sandbox and memory health, recent errors, workspace |
 | list/read_knowledge | Operator-selected packs; read-only and untrusted |
-| run_python | Opt-in immutable Docker image; one source file, no network/credentials, read-only input, bounded CPU/memory/time/output |
-| web_fetch | Opt-in exact operator-selected HTTPS URLs, no redirects or arbitrary model-generated URLs |
+| shell/python (`--sandbox`) | Persistent Docker container `resident-sandbox`; workspace mounted at `/workspace`; internet, pip/apt/git/node; 2 GB RAM, 2 CPUs, 512 pids |
+| web_search/web_fetch | Public internet (Tavily or Brave if keyed, else DuckDuckGo HTML); loopback/private/link-local addresses refused at every redirect |
 
-The model cannot execute a host shell, access sibling memory, edit controller state or identity policy, install packages, commit/push code, or grant itself additional tools. It may write code as an artifact and execute a single standard-library Python file when the operator enables Docker execution. Exit status is execution evidence, not correctness proof.
+Tool failures are returned to the model as data: the exception type, its message and the correct usage. Common wrong names (`rm`, `mv`, `run_shell_command`, `relative=`) are mapped to the installed tool and the substitution is noted in the result.
+
+The sandbox is the Resident's machine, not the host. Controller state, credentials, `.env` and the Docker socket are never mounted. It runs as root inside the container with default Docker isolation and outbound internet, so anything in the workspace can leave via the network; keep secrets out of the workspace. Hardening (egress policy, rootless, gVisor) is future work.
 
 The controller runs on the host and the local operator is trusted. This is not a security claim against hostile host processes or kernel exploits. [Architecture and limitations](docs/architecture.md).
 

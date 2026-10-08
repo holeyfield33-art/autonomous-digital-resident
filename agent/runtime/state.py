@@ -38,6 +38,12 @@ class State:
                 CREATE TABLE IF NOT EXISTS spend(id TEXT PRIMARY KEY, cycle INTEGER NOT NULL,
                     reserved INTEGER NOT NULL, charged INTEGER, provider TEXT);
             """)
+            # Full-text index over the Resident's own memories (kept in sync by remember()).
+            db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(key UNINDEXED, value)")
+            db.execute(
+                "INSERT INTO memory_fts(key,value) SELECT key,value FROM memories "
+                "WHERE key NOT IN (SELECT key FROM memory_fts)"
+            )
             for key, value in (
                 ("resident_id", uuid.uuid4().hex),
                 ("cap_micro", str(cap_micro)),
@@ -110,7 +116,9 @@ class State:
         if not key.startswith(f"resident/{self.resident_id}/") or len(value.encode()) > 16000:
             raise ValueError("Invalid resident memory")
         with self.db() as db:
-            db.execute("INSERT OR IGNORE INTO memories(key,value) VALUES (?,?)", (key, value))
+            inserted = db.execute("INSERT OR IGNORE INTO memories(key,value) VALUES (?,?)", (key, value))
+            if inserted.rowcount:
+                db.execute("INSERT INTO memory_fts(key,value) VALUES (?,?)", (key, value))
 
     def pending(self):
         with self.db() as db:
@@ -133,6 +141,80 @@ class State:
                     (query, min(max(int(limit), 1), 10)),
                 )
             ]
+
+    def search_memory(self, query: str, limit: int = 10):
+        """Search your own memories by words (ranked full-text; supports "exact phrase" and OR)."""
+        if not isinstance(query, str) or not query.strip() or len(query) > 300:
+            raise ValueError("query must be 1..300 characters")
+        limit = min(max(int(limit), 1), 30)
+        with self.db() as db:
+            try:
+                rows = db.execute(
+                    "SELECT key, snippet(memory_fts, 1, '[', ']', ' … ', 40) AS excerpt FROM memory_fts "
+                    "WHERE memory_fts MATCH ? ORDER BY rank LIMIT ?",
+                    (query, limit),
+                ).fetchall()
+            except sqlite3.OperationalError:
+                # Plain words fallback when the query isn't valid FTS syntax.
+                terms = " OR ".join('"' + t.replace('"', "") + '"' for t in query.split() if t.strip('"'))
+                rows = db.execute(
+                    "SELECT key, snippet(memory_fts, 1, '[', ']', ' … ', 40) AS excerpt FROM memory_fts "
+                    "WHERE memory_fts MATCH ? ORDER BY rank LIMIT ?",
+                    (terms, limit),
+                ).fetchall()
+        return {"query": query, "results": [dict(r) for r in rows]}
+
+    def cycle_history(self, limit: int = 20, status: str = ""):
+        """Your recent wakes: id, time, status, direction and summary. Optional status filter."""
+        limit = min(max(int(limit), 1), 100)
+        sql, args = "SELECT id,started,ended,status,direction,summary FROM cycles", []
+        if status:
+            sql, args = sql + " WHERE status=?", [status]
+        with self.db() as db:
+            rows = db.execute(sql + " ORDER BY id DESC LIMIT ?", (*args, limit)).fetchall()
+        return {"cycles": [{**dict(r), "summary": r["summary"][:400]} for r in rows]}
+
+    def get_cycle(self, cycle: int):
+        """What happened in one wake: each decision and each tool call with its outcome."""
+        if type(cycle) is not int:
+            raise ValueError("cycle must be an integer")
+        with self.db() as db:
+            row = db.execute("SELECT * FROM cycles WHERE id=?", (cycle,)).fetchone()
+        if not row:
+            raise LookupError(f"No cycle {cycle}")
+        steps = []
+        for event in self.events(cycle):
+            p = event["payload"]
+            if event["kind"] == "decision":
+                steps.append({"decision": p.get("summary", "")[:400], "intent": p.get("intent")})
+            elif event["kind"] == "tool_started":
+                steps.append({"tool": p.get("name"), "arguments": _brief(p.get("arguments"))})
+            elif event["kind"] == "tool_result" and steps:
+                result = p.get("result")
+                failed = isinstance(result, dict) and result.get("error")
+                steps[-1]["outcome"] = f"{failed}: {result.get('message', '')}"[:300] if failed else "ok"
+            elif event["kind"] == "workspace_changes":
+                steps.append({"files_changed": p})
+            elif event["kind"] == "error":
+                steps.append({"cycle_error": p})
+        return {**dict(row), "steps": steps[-60:]}
+
+    def recent_tool_errors(self, limit=8):
+        with self.db() as db:
+            rows = db.execute(
+                "SELECT cycle,payload FROM events WHERE kind='tool_error' ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [
+            {"cycle": r["cycle"], **{k: v for k, v in json.loads(r["payload"]).items() if k != "recovered"}}
+            for r in rows
+        ]
+
+    def last_event(self, cycle, kind):
+        with self.db() as db:
+            row = db.execute(
+                "SELECT payload FROM events WHERE cycle=? AND kind=? ORDER BY id DESC LIMIT 1", (cycle, kind)
+            ).fetchone()
+        return json.loads(row[0]) if row else None
 
     def reserve(self, cycle, amount):
         if type(amount) is not int or amount <= 0:
@@ -192,6 +274,12 @@ class State:
             and (datetime.now(timezone.utc) - datetime.fromisoformat(info["at"])).total_seconds() < 45
         )
         return {**info, "healthy": bool(info.get("active") and fresh)}
+
+
+def _brief(arguments):
+    if not isinstance(arguments, dict):
+        return arguments
+    return {k: (v[:120] + "…" if isinstance(v, str) and len(v) > 120 else v) for k, v in arguments.items()}
 
 
 @contextmanager

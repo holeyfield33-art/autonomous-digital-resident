@@ -68,7 +68,7 @@ def test_file_paths_reject_escapes(tmp_path, path):
 def test_artifact_escape_and_overwrite_and_secret(tmp_path):
     fs = FilesystemTools(tmp_path)
     fs.write_file("file.py", "print('hello')")
-    with pytest.raises(ValueError):
+    with pytest.raises(FileExistsError, match="overwrite=true"):
         fs.write_file("file.py", "changed")
     with pytest.raises(ValueError):
         fs.write_file("file.py", "password='abcdefghijk'", overwrite=True)
@@ -86,16 +86,18 @@ def test_update_and_delete_files_are_bounded(tmp_path):
     assert result["status"] == "updated"
     assert fs.read_file("notes.txt")["content"] == "after"
 
-    result = fs.delete_file("notes.txt")
+    result = fs.delete("notes.txt")
     assert result["status"] == "deleted"
     assert not fs.exists("notes.txt")["exists"]
 
-    with pytest.raises(ValueError):
+    with pytest.raises(FileNotFoundError):
         fs.update_file("missing.txt", "new")
     with pytest.raises(ValueError):
-        fs.delete_file("../outside.txt")
-    with pytest.raises(ValueError):
-        fs.delete_file("directory")
+        fs.delete("../outside.txt")
+    fs.write_file("directory/inner.txt", "x")
+    with pytest.raises(OSError, match="recursive=true"):
+        fs.delete("directory")
+    assert fs.delete("directory", recursive=True)["status"] == "deleted_directory"
 
 
 def test_hardlink_refused(tmp_path):
@@ -107,11 +109,11 @@ def test_hardlink_refused(tmp_path):
         fs.read_file("link.txt")
 
 
-def test_no_ambient_network():
-    with pytest.raises(ValueError):
-        WebTools().fetch("http://127.0.0.1:8010/health")
-    with pytest.raises(ValueError):
-        WebTools(["https://example.com/page"]).fetch("https://example.com/page?data=secret")
+def test_web_cannot_reach_private_networks():
+    for url in ("http://127.0.0.1:8010/health", "http://localhost:8010/mcp/", "http://192.168.1.1/",
+                "file:///etc/passwd", "https://user:pw@example.com/"):
+        with pytest.raises(ValueError):
+            WebTools().fetch(url)
 
 
 def test_atomic_budget_zero_and_ambiguous(tmp_path):
@@ -129,7 +131,7 @@ def test_atomic_budget_zero_and_ambiguous(tmp_path):
     with ThreadPoolExecutor(2) as pool:
         claims = list(pool.map(reserve, range(2)))
     assert sum(c is not None for c in claims) == 1
-    assert State(tmp_path / "shared", 1000).budget()["cap_usd"] == 1.0
+    assert State(tmp_path / "shared", 1000).budget()["cap_usd"] == 0.001
     assert state.budget()["unresolved"] == 1
     state.settle(next(c for c in claims if c), 110, "provider")
     assert state.budget()["halted"]
@@ -169,19 +171,21 @@ def test_outbox_retries_only_own_memory(tmp_path):
 def test_schema_and_html_errors_are_data(tmp_path):
     with pytest.raises(ValueError):
         parse_decision('{"summary":"ok", "actions": [], "shell": "env"}')
-    # Intent must be the closed enum; prose must surface a diagnostic ValueError.
-    with pytest.raises(ValueError, match="intent"):
-        parse_decision(
-            json.dumps(
-                {
-                    "summary": "ok",
-                    "direction": "d",
-                    "intent": "Continue maintaining system health",
-                    "actions": [],
-                    "next_wake_seconds": 300,
-                }
-            )
-        )
+    # Prose intent is normalized deterministically and the fix is recorded.
+    fixes = []
+    decision = parse_decision(
+        json.dumps(
+            {
+                "summary": "ok",
+                "direction": "d",
+                "intent": "Continue maintaining system health",
+                "actions": [],
+                "next_wake_seconds": 300,
+            }
+        ),
+        fixes,
+    )
+    assert decision.intent == "continue" and any("intent" in f for f in fixes)
     state = State(tmp_path)
     cycle = state.begin("demo")
     state.finish(cycle, "error", "<script>alert(1)</script>", "<b>fake</b>")
@@ -196,7 +200,7 @@ def test_dashboard_tolerates_list_tool_results(tmp_path):
     state.finish(cycle, "completed", "ok", "Done")
     html = render(state)
     assert "not</pre>" not in html
-    assert '"not"' in html and '"an"' in html and '"object"' in html
+    assert '&quot;not&quot;' in html and '&quot;object&quot;' in html
 
 
 def test_provider_usage_and_failure_hold(tmp_path):
@@ -229,7 +233,7 @@ def test_provider_usage_and_failure_hold(tmp_path):
 
 def test_bad_decision_is_retained_and_failure_survives(tmp_path):
     class BadModel(DemoModel):
-        async def chat(self, messages, cycle):
+        async def chat(self, messages, cycle, schema=None):
             return "not JSON"
 
     soul = tmp_path / "SOUL.md"
@@ -238,9 +242,10 @@ def test_bad_decision_is_retained_and_failure_survives(tmp_path):
     workspace = tmp_path / "workspace"
     loop = ResidentLoop(BadModel(), state, build_default_registry(workspace), soul, workspace)
     result = asyncio.run(loop.one_cycle())
-    assert result["status"] == "error"
-    assert any(e["kind"] == "decision_raw" for e in state.events(1))
-    assert "error" in state.recall()[0]["value"]
+    assert result["status"] == "protocol_error"
+    kinds = [e["kind"] for e in state.events(1)]
+    assert kinds.count("decision_raw") == 2 and "parse_repair" in kinds and "protocol_error" in kinds
+    assert "protocol_error" in state.recall()[0]["value"]
 
 
 def test_tool_failure_is_structured_and_recoverable(tmp_path):
@@ -248,7 +253,7 @@ def test_tool_failure_is_structured_and_recoverable(tmp_path):
         def __init__(self):
             self.calls = 0
 
-        async def chat(self, messages, cycle):
+        async def chat(self, messages, cycle, schema=None):
             self.calls += 1
             if self.calls == 1:
                 return json.dumps(
@@ -291,8 +296,8 @@ def test_tool_failure_is_structured_and_recoverable(tmp_path):
 def test_tool_list_matches_schemas(tmp_path):
     tools = build_default_registry(tmp_path)
     assert set(tools.list_tools()) == {s["name"] for s in tools.schemas()}
-    assert {"update_file", "delete_file"}.issubset(tools.list_tools())
-    assert "shell" not in tools and "web_fetch" not in tools and "run_python" not in tools
+    assert {"update_file", "delete", "move", "edit_file", "search_text"}.issubset(tools.list_tools())
+    assert "shell" not in tools and "web_fetch" not in tools and "python" not in tools
 
 
 def test_stop_and_dashboard_home_select_the_actual_live_state(tmp_path):
@@ -313,3 +318,68 @@ def test_stop_and_dashboard_home_select_the_actual_live_state(tmp_path):
     )
     asyncio.run(loop.run())
     assert model.calls == 0 and state.recent() == []
+
+
+def test_tool_errors_are_specific_and_aliases_resolve(tmp_path):
+    tools = build_default_registry(tmp_path)
+    tools.call("write_file", path="a.txt", content="one")
+    again = tools.call("write_file", relative="a.txt", content="two")
+    assert again["error"] == "FileExistsError" and "overwrite=true" in again["message"]
+    assert again["usage"].startswith("write_file(path, content")
+    assert tools.call("write_file", path="a.txt", content="two", overwrite="true")["status"] == "overwritten"
+    moved = tools.call("mv", src="a.txt", dst="b/a.txt")
+    assert moved["status"] == "moved" and "note" in moved
+    missing = tools.call("read_file", path="nope.md")
+    assert missing["error"] == "FileNotFoundError" and "b" in missing["message"]
+    bad = tools.call("read_file", path="b/a.txt", bogus=1)
+    assert bad["error"] == "TypeError" and "Correct usage" in bad["message"]
+    unknown = tools.call("teleport")
+    assert unknown["error"] == "unknown_tool" and "read_file" in unknown["available_tools"]
+    assert str(tmp_path) not in json.dumps(missing)
+
+
+def test_edit_search_and_ranges(tmp_path):
+    fs = FilesystemTools(tmp_path)
+    fs.write_file("n/a.py", "one\ntwo\nthree\ntwo\n")
+    with pytest.raises(ValueError, match="2 places"):
+        fs.edit_file("n/a.py", "two", "2")
+    assert fs.edit_file("n/a.py", "two", "2", replace_all=True)["replacements"] == 2
+    assert fs.read_file("n/a.py", start_line=2, end_line=3)["content"] == "2\nthree\n"
+    assert fs.search_text("THREE")["hits"][0] == {"path": "n/a.py", "line": 3, "text": "three"}
+    assert fs.find_files("*.py")["matches"][0]["path"] == "n/a.py"
+
+
+def test_memory_search_and_cycle_replay(tmp_path):
+    state = State(tmp_path / "state")
+    soul = tmp_path / "SOUL.md"
+    soul.write_text("Explore.")
+    workspace = tmp_path / "workspace"
+    loop = ResidentLoop(DemoModel(), state, build_default_registry(workspace, state), soul, workspace)
+    asyncio.run(loop.run(1))
+    assert state.search_memory("continuity")["results"]
+    replay = state.get_cycle(1)
+    assert any(s.get("tool") == "create_artifact" for s in replay["steps"])
+    changes = state.last_event(1, "workspace_changes")
+    assert changes["added"] and changes["added"][0]["sha256"]
+
+
+def test_wake_keeps_history_and_facts(tmp_path):
+    seen = []
+
+    class Model(DemoModel):
+        async def chat(self, messages, cycle, schema=None):
+            seen.append(list(messages))
+            step = len(seen)
+            actions = [{"name": "list_dir", "arguments": {}}] if step < 3 else []
+            return json.dumps({"summary": f"s{step}", "direction": "d", "intent": "explore",
+                               "actions": actions, "next_wake_seconds": 60})
+
+    state = State(tmp_path / "state")
+    soul = tmp_path / "SOUL.md"
+    soul.write_text("Explore.")
+    workspace = tmp_path / "workspace"
+    loop = ResidentLoop(Model(), state, build_default_registry(workspace, state), soul, workspace, max_steps=8)
+    assert asyncio.run(loop.one_cycle())["status"] == "completed"
+    assert len(seen[2]) == 6  # system, observation, decision, results, decision, results
+    facts = json.loads(seen[0][1]["content"])["facts"]
+    assert facts["now_utc"] and facts["cycle"] == 1 and "not_available" in facts

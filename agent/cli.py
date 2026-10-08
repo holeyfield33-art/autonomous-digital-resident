@@ -23,6 +23,8 @@ from agent.models.nebius import (
 )
 from agent.runtime.state import State
 from agent.tools.registry import build_default_registry
+from agent.tools.sandbox import Sandbox
+from agent.tools.web import WebTools
 
 
 def load_environment(path):
@@ -35,6 +37,8 @@ def load_environment(path):
         "MNEME_MCP_URL",
         "MNEME_LOCAL_CONFIG",
         "RESIDENT_EXECUTION_IMAGE",
+        "TAVILY_API_KEY",
+        "BRAVE_API_KEY",
     }
     values = dotenv_values(path, interpolate=False, encoding="utf-8-sig")
     if any(k not in allowed or not isinstance(v, str) for k, v in values.items()):
@@ -59,6 +63,7 @@ def parser():
             "resume",
             "stop",
             "plan",
+            "sandbox",
         ],
     )
     p.add_argument("--live", action="store_true", help="Enable real Nebius inference; demo is default")
@@ -72,14 +77,19 @@ def parser():
     p.add_argument("--soul", type=Path, default=Path("SOUL.md"))
     p.add_argument("--knowledge", type=Path, default=Path(__file__).parent / "knowledge" / "packs")
     p.add_argument("--cycles", type=int, default=1, help="0 polls until stopped or spending is exhausted")
-    p.add_argument("--steps", type=int, default=2, choices=range(1, 5))
+    p.add_argument("--steps", type=int, default=12, choices=range(1, 41), metavar="1..40")
+    p.add_argument("--max-tool-calls", type=int, default=60, help="Per-wake tool call limit")
+    p.add_argument("--max-wake-seconds", type=int, default=1200, help="Per-wake wall-clock limit")
+    p.add_argument("--sandbox", action="store_true", help="Give the Resident its persistent Docker sandbox")
+    p.add_argument("--sandbox-offline", action="store_true", help="Run the sandbox with --network none")
+    p.add_argument("--no-web", action="store_true", help="Disable web_search/web_fetch")
     p.add_argument("--interval", type=int, default=300)
     p.add_argument("--budget-usd", default="0.50", help="Durable local cap; cannot raise an existing cap")
     p.add_argument("--env-file", type=Path, default=Path(".env"))
     p.add_argument("--mneme", action="store_true")
     p.add_argument("--mneme-config", type=Path, help="Existing ignored Mneme local settings; never copied")
     p.add_argument("--execution-image", help="Immutable local Docker sha256 image ID")
-    p.add_argument("--source-url", action="append", default=[], help="One exact trusted HTTPS research URL")
+    p.add_argument("--source-url", action="append", default=[], help="A suggested source shown in facts")
     p.add_argument("--port", type=int, default=8766)
     return p
 
@@ -114,11 +124,28 @@ async def operate(args, state, workspace):
         return
     model = NebiusClient(state) if args.live else DemoModel()
     image = args.execution_image or os.environ.get("RESIDENT_EXECUTION_IMAGE")
-    tools = build_default_registry(workspace, state, args.knowledge, image, args.source_url)
+    sandbox = None
+    if args.sandbox:
+        sandbox = Sandbox(workspace, network=not args.sandbox_offline)
+        await asyncio.to_thread(sandbox.ensure)
+    web = None if args.no_web else WebTools(args.source_url)
+    tools = build_default_registry(workspace, state, args.knowledge, image, web=web, sandbox=sandbox)
     soul_path = args.soul if args.soul.exists() else Path(__file__).parent / "default_soul.md"
     loop = ResidentLoop(
-        model, state, tools, soul_path, workspace, memory, cycle_interval=args.interval, max_steps=args.steps
+        model,
+        state,
+        tools,
+        soul_path,
+        workspace,
+        memory,
+        cycle_interval=args.interval,
+        max_steps=args.steps,
+        max_tool_calls=args.max_tool_calls,
+        max_wake_seconds=args.max_wake_seconds,
+        sandbox=sandbox,
+        source_urls=args.source_url,
     )
+    tools.register("system_status", loop.system_status)
     try:
         await loop.run(args.cycles)
     finally:
@@ -164,6 +191,10 @@ def main():
                 indent=2,
             )
         )
+    elif args.command == "sandbox":
+        sandbox = Sandbox(workspace, network=not args.sandbox_offline)
+        sandbox.ensure()
+        print(json.dumps(sandbox.status(), indent=2))
     elif args.command == "observe":
         from agent.runtime.dashboard import serve
 

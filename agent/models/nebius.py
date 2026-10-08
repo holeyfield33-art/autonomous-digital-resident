@@ -11,8 +11,8 @@ from agent.tools.filesystem import check_text
 
 MODEL = "nvidia/nemotron-3-super-120b-a12b"
 BASE_URL = "https://api.tokenfactory.nebius.com/v1/"
-MAX_REQUEST_BYTES = 24000
-MAX_OUTPUT_TOKENS = 2048
+MAX_REQUEST_BYTES = 400_000
+MAX_OUTPUT_TOKENS = 8192
 # Conservative accounting ceiling, not a claim about current list pricing.
 MICRO_USD_PER_TOKEN = 2
 
@@ -34,7 +34,7 @@ class NebiusClient:
         )
         self.last_usage = None
 
-    async def chat(self, messages, cycle):
+    async def chat(self, messages, cycle, schema=None):
         body = {
             "model": MODEL,
             "messages": messages,
@@ -42,14 +42,30 @@ class NebiusClient:
             "max_tokens": MAX_OUTPUT_TOKENS,
             "extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
         }
+        if schema:
+            # Provider-side constrained decoding: output must parse and match the decision schema.
+            body["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": "decision", "schema": schema},
+            }
         serialized = json.dumps(body, ensure_ascii=False)
         check_text(serialized)
         size = len(serialized.encode())
         if size > MAX_REQUEST_BYTES:
-            raise ValueError("Request exceeds 24000-byte context cap")
+            raise ValueError(f"Request exceeds {MAX_REQUEST_BYTES}-byte context cap")
         input_bound = size + 8192
         reservation = self.state.reserve(cycle, (input_bound + MAX_OUTPUT_TOKENS) * MICRO_USD_PER_TOKEN)
-        self.state.event(cycle, "request", body)
+        # Full request bodies grow with in-wake history; record the newest turn plus sizes.
+        self.state.event(
+            cycle,
+            "request",
+            {
+                "bytes": size,
+                "messages": len(messages),
+                "schema": bool(schema),
+                "last_message": messages[-1] if messages else None,
+            },
+        )
         try:
             response = await asyncio.to_thread(self.client.chat.completions.create, **body)
         except Exception as exc:
@@ -80,8 +96,7 @@ class NebiusClient:
             "finish_reason": choice.get("finish_reason"),
         }
         self.state.event(cycle, "response", {**self.last_usage, "content": content})
-        if choice.get("finish_reason") != "stop":
-            raise RuntimeError("Incomplete model response")
+        # A truncated ("length") reply is returned for parsing/repair rather than failing the wake.
         return content
 
     def close(self):
@@ -99,7 +114,7 @@ class DemoModel:
     def __init__(self):
         self.calls = 0
 
-    async def chat(self, messages, cycle):
+    async def chat(self, messages, cycle, schema=None):
         self.calls += 1
         feedback = json.loads(messages[-1]["content"])
         if feedback.get("tool_results") is not None:
