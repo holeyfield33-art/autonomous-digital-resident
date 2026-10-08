@@ -13,6 +13,8 @@ MODEL = "nvidia/nemotron-3-super-120b-a12b"
 BASE_URL = "https://api.tokenfactory.nebius.com/v1/"
 MAX_REQUEST_BYTES = 400_000
 MAX_OUTPUT_TOKENS = 8192
+# Median decision latency is ~3s, but long outputs have taken ~50s and 60s timed out several wakes.
+REQUEST_TIMEOUT = httpx.Timeout(180.0, connect=15.0)
 # Conservative accounting ceiling, not a claim about current list pricing.
 MICRO_USD_PER_TOKEN = 2
 
@@ -29,7 +31,7 @@ class NebiusClient:
             api_key=key,
             base_url=BASE_URL,
             max_retries=0,
-            timeout=60,
+            timeout=REQUEST_TIMEOUT,
             http_client=httpx.Client(trust_env=False, follow_redirects=False),
         )
         self.last_usage = None
