@@ -84,7 +84,9 @@ def parser():
     p.add_argument("--sandbox-offline", action="store_true", help="Run the sandbox with --network none")
     p.add_argument("--no-web", action="store_true", help="Disable web_search/web_fetch")
     p.add_argument("--interval", type=int, default=300)
-    p.add_argument("--budget-usd", default="0.50", help="Durable local cap; cannot raise an existing cap")
+    p.add_argument(
+        "--budget-usd", default=None, help="Raise the durable cap (default: keep it; $0.50 for new state)"
+    )
     p.add_argument("--env-file", type=Path, default=Path(".env"))
     p.add_argument("--mneme", action="store_true")
     p.add_argument("--mneme-config", type=Path, help="Existing ignored Mneme local settings; never copied")
@@ -161,9 +163,11 @@ def main():
         raise SystemExit("Demo cannot use live inference")
     if not 0 <= args.cycles <= 10000 or not 0 <= args.interval <= 3600 or not 1024 <= args.port <= 65535:
         raise SystemExit("Invalid cycle, interval or port limit")
-    cap = Decimal(args.budget_usd)
-    if not cap.is_finite() or not 0 <= cap <= 20:
-        raise SystemExit("Budget must be finite and between $0 and $20")
+    cap = None
+    if args.budget_usd is not None:
+        cap = Decimal(args.budget_usd)
+        if not cap.is_finite() or not 0 <= cap <= 20:
+            raise SystemExit("Budget must be finite and between $0 and $20")
     mode, root = resolve_mode_home(args.home, args.live)
     args.live = mode == "live"
     if args.command == "demo" and args.live:
@@ -171,7 +175,7 @@ def main():
     workspace = (args.workspace or Path("workspace") / mode).resolve()
     if root == workspace or root.is_relative_to(workspace) or workspace.is_relative_to(root):
         raise SystemExit("Controller state and model workspace must be disjoint")
-    state = State(root, int(cap * 1_000_000))
+    state = State(root, None if cap is None else int(cap * 1_000_000))
     if args.command in {"pause", "stop", "resume"}:
         if args.command == "resume":
             for name in ("STOP", "PAUSE"):

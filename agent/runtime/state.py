@@ -19,7 +19,10 @@ class BudgetExceeded(RuntimeError):
 
 
 class State:
-    def __init__(self, root: Path, cap_micro: int = 500_000):
+    def __init__(self, root: Path, cap_micro: int | None = 500_000):
+        """cap_micro=None keeps the durable cap (500_000 for a new state directory)."""
+        explicit = cap_micro is not None
+        cap_micro = 500_000 if cap_micro is None else cap_micro
         if type(cap_micro) is not int or cap_micro < 0:
             raise ValueError("Nonnegative integer budget required")
         self.root = Path(root).resolve()
@@ -52,9 +55,9 @@ class State:
                 db.execute("INSERT OR IGNORE INTO settings VALUES (?,?)", (key, value))
             # Explicit configuration may raise a stale cap, but never lower it.
             current = int(db.execute("SELECT value FROM settings WHERE key='cap_micro'").fetchone()[0])
-            if cap_micro < current:
+            if explicit and cap_micro < current:
                 raise ValueError("Budget cap cannot be lowered below the durable value")
-            if cap_micro > current:
+            if explicit and cap_micro > current:
                 db.execute("UPDATE settings SET value=? WHERE key='cap_micro'", (str(cap_micro),))
 
     @contextmanager
