@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest==9.1.1", "ruff==0.16.10"]
+dev = ["pytest==9.1.1", "ruff==0.16.10", "pytest-cov==7.1.0"]
 
 [project.scripts]
 resident = "agent.cli:main"

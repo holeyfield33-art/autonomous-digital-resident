@@ -110,7 +110,7 @@ Each resident is a separate state directory, workspace, sandbox and budget. Resi
 
 Without `-Name` the script controls the original resident exactly as before. A sandbox refuses to use, or remove, a container whose `/workspace` mount belongs to another workspace. An explicit `--soul` path that does not exist stops startup instead of falling back to the packaged soul. Each sandbox is capped at 2 CPUs and 2 GB, so two residents can claim all 4 CPUs of the Docker VM when both are busy.
 
-Tests: `.\.venv\Scripts\python -m pytest -q -ra` and `.\.venv\Scripts\ruff check agent scripts tests`. The two physical Docker tests for the legacy runner skip unless `RESIDENT_TEST_IMAGE` is set.
+Tests: `.\.venv\Scripts\python -m pytest -q -ra`. Coverage (≥90% enforced by review): `.\.venv\Scripts\python -m pytest -q --cov=agent --cov-report=term-missing`. Network, Docker and MCP are mocked in the suite, so it runs offline with no spend. and `.\.venv\Scripts\ruff check agent scripts tests`. The two physical Docker tests for the legacy runner skip unless `RESIDENT_TEST_IMAGE` is set.
 
 ## Recovery and troubleshooting
 

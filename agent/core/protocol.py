@@ -149,8 +149,15 @@ def _normalize(data, fixes):
                 if "args" in item and "arguments" not in item:
                     item["arguments"] = item.pop("args")
                     fixes.append("action.args -> action.arguments")
-                if item.get("arguments") is None:
+                if not isinstance(item.get("arguments"), dict):
                     item["arguments"] = {}
+                # Models often place a tool argument (overwrite, path, content, ...) at the action
+                # level instead of inside arguments; fold those in rather than rejecting the decision.
+                stray = [k for k in list(item) if k not in ("name", "arguments")]
+                if stray:
+                    for key in stray:
+                        item["arguments"].setdefault(key, item.pop(key))
+                    fixes.append("folded_action_keys_into_arguments:" + ",".join(sorted(stray))[:60])
             cleaned.append(item)
         if len(cleaned) > MAX_ACTIONS:
             fixes.append(f"dropped_{len(cleaned) - MAX_ACTIONS}_actions_over_limit")

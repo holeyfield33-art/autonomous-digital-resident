@@ -37,6 +37,10 @@ def load_environment(path):
         "MNEME_MCP_URL",
         "MNEME_LOCAL_CONFIG",
         "RESIDENT_EXECUTION_IMAGE",
+        "RESIDENT_MODEL",
+        "RESIDENT_BASE_URL",
+        "RESIDENT_PRICE_IN",
+        "RESIDENT_PRICE_OUT",
         "TAVILY_API_KEY",
         "BRAVE_API_KEY",
     }
