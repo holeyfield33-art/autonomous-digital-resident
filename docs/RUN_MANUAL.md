@@ -56,7 +56,7 @@ State parent `--home .resident` plus `--live` and exact `--home .resident/live` 
 
 ## Spending
 
-Default durable cap for new state: $0.50 (the live Resident's stored cap is $15; the CLI maximum is $20). Each request reserves `(request bytes + 8192 + 8192 output tokens) × $0.000002` before it is sent, and settles to reported usage afterwards. The request ceiling is 400,000 bytes. Within a wake the conversation grows with each step: a measured 12-step wake reached about 75 KB per request and settled at $0.34. Older results are compacted beyond about 90 KB. Cost scales roughly with steps × wakes per hour, so the interval is the main lever.
+Default durable cap for new state: $0.50 (the live Resident's stored cap is $15; the CLI maximum is $100). Each request reserves `(request bytes + 8192 + 8192 output tokens) × $0.000002` before it is sent, and settles to reported usage afterwards. The request ceiling is 400,000 bytes. Within a wake the conversation grows with each step: a measured 12-step wake reached about 75 KB per request and settled at $0.34. Older results are compacted beyond about 90 KB. Cost scales roughly with steps × wakes per hour, so the interval is the main lever.
 
 There are zero automatic provider retries. One repair request is made only when a decision fails to parse. Usage settlement is conservative accounting, not a provider invoice. Missing or ambiguous usage retains a hold; do not release an unresolved hold without independent provider evidence. Creating a new state directory to evade the cap is not a supported budget-management procedure.
 

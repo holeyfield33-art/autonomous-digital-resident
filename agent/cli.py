@@ -172,8 +172,8 @@ def main():
     cap = None
     if args.budget_usd is not None:
         cap = Decimal(args.budget_usd)
-        if not cap.is_finite() or not 0 <= cap <= 20:
-            raise SystemExit("Budget must be finite and between $0 and $20")
+        if not cap.is_finite() or not 0 <= cap <= 100:
+            raise SystemExit("Budget must be finite and between $0 and $100")
     if args.soul is None:
         args.soul = Path("SOUL.md") if Path("SOUL.md").exists() else Path(__file__).parent / "default_soul.md"
     elif not args.soul.is_file():
