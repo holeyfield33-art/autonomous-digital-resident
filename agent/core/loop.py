@@ -232,7 +232,8 @@ class ResidentLoop:
             "everything earlier in this wake; do not re-read what you already saw.\n"
             "- A failed tool returns an error with a message and correct usage. That is information: adjust "
             "and continue.\n\n"
-            "REPLY FORMAT: exactly one JSON object:\n"
+            "REPLY FORMAT: reply with exactly one JSON object and nothing else — no reasoning, no "
+            "prose, no markdown fences, before or after it:\n"
             '{"summary": "what you did/observed (public, brief)", "direction": "what you are pursuing", '
             '"intent": "explore|build|continue|abandon|rest", '
             '"actions": [{"name": "<tool>", "arguments": {...}}], "next_wake_seconds": 300}\n'

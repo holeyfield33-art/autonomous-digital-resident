@@ -416,6 +416,25 @@ def test_wake_keeps_history_and_facts(tmp_path):
     assert facts["now_utc"] and facts["cycle"] == 1 and "not_available" in facts
 
 
+def test_decision_extracted_from_prose_and_trailing_text():
+    base = {"summary": "s", "direction": "d", "intent": "build",
+            "actions": [{"name": "list_dir", "arguments": {}}], "next_wake_seconds": 300}
+    obj = json.dumps(base)
+    # Prose before the object (DeepSeek reasoning leak).
+    fixes = []
+    d = parse_decision("Let me think. Here is my decision:\n" + obj, fixes)
+    assert d.intent == "build" and "extracted_first_json_object" in fixes
+    # A complete object followed by extra text / a second object ("Extra data").
+    d2 = parse_decision(obj + '\nAlso note: {"summary":"junk"}', [])
+    assert d2.summary == "s" and len(d2.actions) == 1
+    # A brace inside a string must not fool the extractor.
+    tricky = dict(base, summary="use {curly} braces } here")
+    assert parse_decision("noise " + json.dumps(tricky)).summary == "use {curly} braces } here"
+    # Genuinely truncated (no closing brace) still fails -> repair path.
+    with pytest.raises(ValueError):
+        parse_decision('{"summary": "cut off mid', [])
+
+
 def test_long_summary_is_truncated_not_rejected():
     fixes = []
     raw = json.dumps({"summary": "x" * 5000, "direction": "y" * 900, "intent": "build",

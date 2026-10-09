@@ -51,6 +51,32 @@ def decision_schema(tool_names=()):
     }
 
 
+def _first_object(text):
+    """The first balanced {...} object, honoring string/escape state. None if unterminated."""
+    start = text.find("{")
+    if start == -1:
+        return None
+    depth, in_str, esc = 0, False, False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+        elif ch == '"':
+            in_str = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+    return None  # unterminated (e.g. output truncated at the token limit)
+
+
 def _load(raw, fixes):
     try:
         return json.loads(raw)
@@ -61,10 +87,12 @@ def _load(raw, fixes):
     if fence:
         text = fence.group(1)
         fixes.append("stripped_markdown_fence")
-    start, end = text.find("{"), text.rfind("}")
-    if start > 0 or (end != -1 and end < len(text) - 1):
-        text = text[start : end + 1]
-        fixes.append("trimmed_text_outside_object")
+    # Models (esp. without schema-constrained decoding) wrap the decision in prose or emit
+    # extra text/objects after it; take the first complete object and drop the rest.
+    obj = _first_object(text)
+    if obj is not None and obj != text.strip():
+        text = obj
+        fixes.append("extracted_first_json_object")
     try:
         # strict=False accepts raw newlines/tabs inside strings, the most common slip.
         data = json.loads(text, strict=False)
@@ -100,10 +128,13 @@ def _normalize(data, fixes):
             data["next_wake_seconds"] = 300
     elif isinstance(data.get("next_wake_seconds"), int):
         data["next_wake_seconds"] = min(max(data["next_wake_seconds"], 10), 3600)
-    for key in ("summary", "direction"):
+    for key, limit in (("summary", 2000), ("direction", 500)):
         if not data.get(key):
             data[key] = "(none given)"
             fixes.append(f"filled_empty_{key}")
+        elif isinstance(data[key], str) and len(data[key]) > limit:
+            data[key] = data[key][: limit - 1] + "…"
+            fixes.append(f"truncated_{key}_to_{limit}_chars")
     actions = data.get("actions")
     if actions is None:
         data["actions"] = []
