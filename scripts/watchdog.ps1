@@ -15,8 +15,8 @@
 param(
     [int]$MinFreeGB = 6,
     [string]$Drive = 'C',
-    [string[]]$Sandboxes = @('resident-sandbox', 'resident-sandbox-b'),
-    [string[]]$StateDirs = @('.resident/live', '.resident/b/live'),
+    [string[]]$Sandboxes = @('resident-sandbox', 'resident-sandbox-b', 'resident-sandbox-c', 'resident-sandbox-d'),
+    [string[]]$StateDirs = @('.resident/live', '.resident/b/live', '.resident/c/live', '.resident/d/live'),
     [int]$IntervalSec = 120,
     [switch]$Once,
     [switch]$KillTunnels

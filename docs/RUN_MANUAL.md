@@ -33,6 +33,24 @@ Windows background launch uses `scripts/local.ps1`:
 
 A stopped process needs `start` again; `resume` only clears markers. The background script records PID and start time, avoiding an unrelated reused PID. It does not forcibly terminate in-flight calls. Console foreground use ends with Ctrl+C.
 
+## Model selection (A/B)
+
+The model, endpoint and per-token pricing are configurable so residents can run different
+models against the same key. Defaults keep Nemotron. DeepSeek-V4-Flash needs schema-constrained
+decoding off (it returns empty output under `json_schema`); it follows JSON instructions well via
+parse+repair. Example:
+
+```powershell
+.\scripts\local.ps1 start -Name c -Soul souls\c.md -Sandbox `
+  -Model deepseek-ai/DeepSeek-V4-Flash-0731 `
+  -BaseUrl https://api.tokenfactory.us-central1.nebius.com/v1/ `
+  -PriceIn 0.30 -PriceOut 1.20 -NoResponseSchema `
+  -Steps 8 -Interval 900 -BudgetUsd 15
+```
+
+`-PriceIn`/`-PriceOut` are USD per million tokens and feed the durable ledger (numerically equal
+to micro-USD per token). Each wake records its `model` in the request event for per-model analysis.
+
 ## Watch actions and creations
 
 In another terminal run:

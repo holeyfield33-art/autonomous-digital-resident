@@ -231,6 +231,37 @@ def test_provider_usage_and_failure_hold(tmp_path):
     assert state.budget()["calls"] == 2
 
 
+def test_configurable_model_pricing_and_schema_toggle(tmp_path):
+    state = State(tmp_path)
+    seen = {}
+
+    class Client:
+        def __init__(self):
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
+
+        def create(self, **kwargs):
+            seen.update(kwargs)
+            return SimpleNamespace(
+                model_dump=lambda **kw: {
+                    "id": "x",
+                    "model": kwargs["model"],
+                    "usage": {"prompt_tokens": 1000, "completion_tokens": 100},
+                    "choices": [{"finish_reason": "stop", "message": {"content": "{}"}}],
+                }
+            )
+
+    model = NebiusClient(
+        state, client=Client(), model="deepseek-ai/DeepSeek-V4-Flash-0731",
+        price_in=0.30, price_out=1.20, use_schema=False,
+    )
+    asyncio.run(model.chat([{"role": "user", "content": "hi"}], 1, schema={"type": "object"}))
+    assert seen["model"] == "deepseek-ai/DeepSeek-V4-Flash-0731"
+    assert "response_format" not in seen  # schema suppressed for this model
+    # 1000 input @ $0.30/M + 100 output @ $1.20/M = 420 micro-USD
+    assert state.budget()["accounted_usd"] == 0.00042
+    assert model.model_info()["model"] == "deepseek-ai/DeepSeek-V4-Flash-0731"
+
+
 def test_bad_decision_is_retained_and_failure_survives(tmp_path):
     class BadModel(DemoModel):
         async def chat(self, messages, cycle, schema=None):

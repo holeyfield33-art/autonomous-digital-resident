@@ -4,6 +4,11 @@ param(
     # A name runs a separate resident: .resident\<Name>\live, workspace\<Name>, resident-sandbox-<Name>.
     [ValidatePattern('^$|^[a-z0-9][a-z0-9-]{0,30}$')][string]$Name = '',
     [string]$Soul = '',
+    [string]$Model = '',
+    [string]$BaseUrl = '',
+    [string]$PriceIn = '',
+    [string]$PriceOut = '',
+    [switch]$NoResponseSchema,
     [string]$MnemeConfig = '',
     [string]$ExecutionImage = '',
     [int]$Interval = 300,
@@ -53,6 +58,11 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Could not clear operator STOP/PAUSE markers.' }
     $arguments = @('-m','agent.cli','run','--live','--mneme','--cycles','0','--interval',"$Interval",'--steps',"$Steps",'--budget-usd',$BudgetUsd) + $scope
     if ($Soul) { $arguments += @('--soul',('"' + $Soul + '"')) }
+    if ($Model) { $arguments += @('--model',$Model) }
+    if ($BaseUrl) { $arguments += @('--base-url',$BaseUrl) }
+    if ($PriceIn) { $arguments += @('--price-in',$PriceIn) }
+    if ($PriceOut) { $arguments += @('--price-out',$PriceOut) }
+    if ($NoResponseSchema) { $arguments += '--no-response-schema' }
     if ($Sandbox) { $arguments += '--sandbox' }
     if ($SandboxOffline) { $arguments += '--sandbox-offline' }
     if ($NoWeb) { $arguments += '--no-web' }

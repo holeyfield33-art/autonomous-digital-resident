@@ -1,4 +1,8 @@
-"""Controller-only, bounded no-retry Nemotron inference with durable reservations."""
+"""Controller-only, bounded no-retry hosted inference with durable reservations.
+
+Model, endpoint and per-token pricing are configurable so different residents can run
+different models (e.g. Nemotron vs DeepSeek) against the same key for A/B comparison.
+"""
 
 import asyncio
 import json
@@ -15,36 +19,61 @@ MAX_REQUEST_BYTES = 400_000
 MAX_OUTPUT_TOKENS = 8192
 # Median decision latency is ~3s, but long outputs have taken ~50s and 60s timed out several wakes.
 REQUEST_TIMEOUT = httpx.Timeout(180.0, connect=15.0)
-# Conservative accounting ceiling, not a claim about current list pricing.
+# Price per million tokens in USD == micro-USD per token (numerically equal). Default is a
+# conservative flat ceiling for the Nemotron default, not a list-price claim.
 MICRO_USD_PER_TOKEN = 2
 
 
 class NebiusClient:
     mode = "live"
 
-    def __init__(self, state, api_key=None, client=None):
+    def __init__(
+        self,
+        state,
+        api_key=None,
+        client=None,
+        model=None,
+        base_url=None,
+        price_in=None,
+        price_out=None,
+        use_schema=True,
+        enable_thinking=False,
+    ):
         self.state = state
+        self.model = model or os.environ.get("RESIDENT_MODEL") or MODEL
+        base = base_url or os.environ.get("RESIDENT_BASE_URL") or BASE_URL
+        # price_* are USD per million tokens == micro-USD per token (used directly by the ledger).
+        self.price_in = float(price_in if price_in is not None else os.environ.get("RESIDENT_PRICE_IN", MICRO_USD_PER_TOKEN))
+        self.price_out = float(price_out if price_out is not None else os.environ.get("RESIDENT_PRICE_OUT", MICRO_USD_PER_TOKEN))
+        # Some models (DeepSeek-V4-Flash on Nebius) return empty output under json_schema constrained
+        # decoding; those residents run with use_schema=False and rely on parse+repair instead.
+        self.use_schema = use_schema
+        self.enable_thinking = enable_thinking
         key = api_key or os.environ.get("NEBIUS_API_KEY", "")
         if not key and client is None:
             raise ValueError("NEBIUS_API_KEY required for explicitly selected live mode")
         self.client = client or OpenAI(
             api_key=key,
-            base_url=BASE_URL,
+            base_url=base,
             max_retries=0,
             timeout=REQUEST_TIMEOUT,
             http_client=httpx.Client(trust_env=False, follow_redirects=False),
         )
         self.last_usage = None
 
+    def _cost(self, in_tokens, out_tokens):
+        return int(round(in_tokens * self.price_in + out_tokens * self.price_out))
+
     async def chat(self, messages, cycle, schema=None):
         body = {
-            "model": MODEL,
+            "model": self.model,
             "messages": messages,
             "temperature": 0.6,
             "max_tokens": MAX_OUTPUT_TOKENS,
-            "extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
+            "extra_body": {"chat_template_kwargs": {"enable_thinking": self.enable_thinking}},
         }
-        if schema:
+        send_schema = bool(schema) and self.use_schema
+        if send_schema:
             # Provider-side constrained decoding: output must parse and match the decision schema.
             body["response_format"] = {
                 "type": "json_schema",
@@ -56,7 +85,7 @@ class NebiusClient:
         if size > MAX_REQUEST_BYTES:
             raise ValueError(f"Request exceeds {MAX_REQUEST_BYTES}-byte context cap")
         input_bound = size + 8192
-        reservation = self.state.reserve(cycle, (input_bound + MAX_OUTPUT_TOKENS) * MICRO_USD_PER_TOKEN)
+        reservation = self.state.reserve(cycle, self._cost(input_bound, MAX_OUTPUT_TOKENS))
         # Full request bodies grow with in-wake history; record the newest turn plus sizes.
         self.state.event(
             cycle,
@@ -64,7 +93,8 @@ class NebiusClient:
             {
                 "bytes": size,
                 "messages": len(messages),
-                "schema": bool(schema),
+                "schema": send_schema,
+                "model": self.model,
                 "last_message": messages[-1] if messages else None,
             },
         )
@@ -81,10 +111,10 @@ class NebiusClient:
         if any(type(v) is not int or v < 0 for v in (prompt, completion)):
             raise RuntimeError("Missing usage; reservation retained")
         exceeded = prompt > input_bound or completion > MAX_OUTPUT_TOKENS
-        accounted_tokens = (
-            max(prompt + completion, input_bound + MAX_OUTPUT_TOKENS + 1) if exceeded else prompt + completion
-        )
-        self.state.settle(reservation, accounted_tokens * MICRO_USD_PER_TOKEN, raw.get("id", ""))
+        charged = self._cost(prompt, completion)
+        if exceeded:
+            charged = max(charged, self._cost(input_bound, MAX_OUTPUT_TOKENS) + 1)
+        self.state.settle(reservation, charged, raw.get("id", ""))
         if exceeded:
             raise RuntimeError("Usage exceeded token bound")
         choices = raw.get("choices") or []
@@ -105,7 +135,7 @@ class NebiusClient:
         self.client.close()
 
     def model_info(self):
-        return {"model": MODEL, "provider": "Nebius Token Factory", "mode": self.mode}
+        return {"model": self.model, "provider": "Nebius Token Factory", "mode": self.mode}
 
 
 class DemoModel:

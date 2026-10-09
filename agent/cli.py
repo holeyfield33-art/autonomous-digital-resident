@@ -95,6 +95,15 @@ def parser():
     p.add_argument("--mneme-config", type=Path, help="Existing ignored Mneme local settings; never copied")
     p.add_argument("--execution-image", help="Immutable local Docker sha256 image ID")
     p.add_argument("--source-url", action="append", default=[], help="A suggested source shown in facts")
+    p.add_argument("--model", help="Hosted model id (default: Nemotron)")
+    p.add_argument("--base-url", help="Inference endpoint base URL")
+    p.add_argument("--price-in", type=float, help="Input price USD per million tokens (for the ledger)")
+    p.add_argument("--price-out", type=float, help="Output price USD per million tokens (for the ledger)")
+    p.add_argument(
+        "--no-response-schema",
+        action="store_true",
+        help="Disable json_schema constrained decoding (required for DeepSeek-V4-Flash)",
+    )
     p.add_argument("--port", type=int, default=8766)
     return p
 
@@ -130,7 +139,18 @@ async def operate(args, state, workspace):
             result = await sync_outbox(state, memory)  # drain the whole backlog
         print(json.dumps(result))
         return
-    model = NebiusClient(state) if args.live else DemoModel()
+    model = (
+        NebiusClient(
+            state,
+            model=args.model,
+            base_url=args.base_url,
+            price_in=args.price_in,
+            price_out=args.price_out,
+            use_schema=not args.no_response_schema,
+        )
+        if args.live
+        else DemoModel()
+    )
     image = args.execution_image or os.environ.get("RESIDENT_EXECUTION_IMAGE")
     sandbox = None
     if args.sandbox:
