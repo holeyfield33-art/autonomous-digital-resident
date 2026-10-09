@@ -10,6 +10,7 @@ param(
     [int]$Steps = 12,
     [string]$BudgetUsd = '15',
     [switch]$Sandbox,
+    [switch]$SandboxOffline,
     [switch]$NoWeb,
     [int]$Port = 8766
 )
@@ -53,6 +54,7 @@ try {
     $arguments = @('-m','agent.cli','run','--live','--mneme','--cycles','0','--interval',"$Interval",'--steps',"$Steps",'--budget-usd',$BudgetUsd) + $scope
     if ($Soul) { $arguments += @('--soul',('"' + $Soul + '"')) }
     if ($Sandbox) { $arguments += '--sandbox' }
+    if ($SandboxOffline) { $arguments += '--sandbox-offline' }
     if ($NoWeb) { $arguments += '--no-web' }
     if ($MnemeConfig) { $arguments += @('--mneme-config',('"' + $MnemeConfig + '"')) }
     if ($ExecutionImage) { $arguments += @('--execution-image',$ExecutionImage) }
