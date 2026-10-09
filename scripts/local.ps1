@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('start','stop','pause','resume','status','observe')][string]$Action = 'status',
+    [ValidateSet('start','stop','pause','resume','status','observe','inbox','reply','tell')][string]$Action = 'status',
     # Empty = the original resident (.resident\live, workspace\live, resident-sandbox).
     # A name runs a separate resident: .resident\<Name>\live, workspace\<Name>, resident-sandbox-<Name>.
     [ValidatePattern('^$|^[a-z0-9][a-z0-9-]{0,30}$')][string]$Name = '',
@@ -17,6 +17,9 @@ param(
     [switch]$Sandbox,
     [switch]$SandboxOffline,
     [switch]$NoWeb,
+    [switch]$HumanChannel,
+    [int]$MsgId = 0,
+    [string]$Text = '',
     [int]$Port = 8766
 )
 $ErrorActionPreference = 'Stop'
@@ -34,9 +37,19 @@ $recordPath = Join-Path $privateRoot 'service.json'
 if (-not (Test-Path -LiteralPath $pythonPath)) { throw 'Install the local .venv first; see README.' }
 Push-Location $repoRoot
 try {
-    if ($Action -in @('stop','pause','resume','status')) {
+    if ($Action -in @('stop','pause','resume','status','inbox')) {
         & $pythonPath -m agent.cli $Action --live @scope
         if ($LASTEXITCODE -ne 0) { throw "Resident $Action failed." }
+        return
+    }
+    if ($Action -eq 'reply') {
+        & $pythonPath -m agent.cli reply --live @scope --msg-id $MsgId --text $Text
+        if ($LASTEXITCODE -ne 0) { throw 'Resident reply failed.' }
+        return
+    }
+    if ($Action -eq 'tell') {
+        & $pythonPath -m agent.cli tell --live @scope --text $Text
+        if ($LASTEXITCODE -ne 0) { throw 'Resident tell failed.' }
         return
     }
     if ($Action -eq 'observe') {
@@ -66,6 +79,7 @@ try {
     if ($Sandbox) { $arguments += '--sandbox' }
     if ($SandboxOffline) { $arguments += '--sandbox-offline' }
     if ($NoWeb) { $arguments += '--no-web' }
+    if ($HumanChannel) { $arguments += '--human-channel' }
     if ($MnemeConfig) { $arguments += @('--mneme-config',('"' + $MnemeConfig + '"')) }
     if ($ExecutionImage) { $arguments += @('--execution-image',$ExecutionImage) }
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'

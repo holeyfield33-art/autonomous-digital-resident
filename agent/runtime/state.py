@@ -40,6 +40,10 @@ class State:
                     synced INTEGER NOT NULL DEFAULT 0, error TEXT);
                 CREATE TABLE IF NOT EXISTS spend(id TEXT PRIMARY KEY, cycle INTEGER NOT NULL,
                     reserved INTEGER NOT NULL, charged INTEGER, provider TEXT);
+                CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    cycle INTEGER, role TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open',
+                    summary TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '',
+                    at TEXT NOT NULL, parent INTEGER);
             """)
             # Full-text index over the Resident's own memories (kept in sync by remember()).
             db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(key UNINDEXED, value)")
@@ -123,15 +127,67 @@ class State:
             if inserted.rowcount:
                 db.execute("INSERT INTO memory_fts(key,value) VALUES (?,?)", (key, value))
 
-    def pending(self):
+    def pending(self, limit=25):
         with self.db() as db:
             return [
-                dict(r) for r in db.execute("SELECT * FROM memories WHERE synced=0 ORDER BY rowid LIMIT 5")
+                dict(r)
+                for r in db.execute("SELECT * FROM memories WHERE synced=0 ORDER BY rowid LIMIT ?", (limit,))
             ]
 
     def memory_result(self, key, error=None):
         with self.db() as db:
             db.execute("UPDATE memories SET synced=?,error=? WHERE key=?", (int(error is None), error, key))
+
+    # --- human collaboration channel (two-way, async between wakes) ---
+    def post_message(self, role, summary, body, cycle=None, parent=None):
+        if role not in ("agent", "operator"):
+            raise ValueError("role must be 'agent' or 'operator'")
+        with self.db() as db:
+            return db.execute(
+                "INSERT INTO messages(cycle,role,status,summary,body,at,parent) VALUES (?,?,'open',?,?,?,?)",
+                (cycle, role, str(summary)[:300], str(body)[:8000], now(), parent),
+            ).lastrowid
+
+    def contact_operator(self, summary: str, body: str = ""):
+        """Message your human operator/collaborator. They reply between wakes; replies arrive in your
+        facts as operator_messages. Use for questions, decisions, or actions only a human can take
+        (deploy, publish, pay, register, contact people)."""
+        if not isinstance(summary, str) or not summary.strip():
+            raise ValueError("summary must be a non-empty string")
+        msg_id = self.post_message("agent", summary, body)
+        return {"status": "sent_to_operator", "message_id": msg_id, "note": "A reply, if any, will appear in a later wake's facts."}
+
+    def take_operator_messages(self):
+        """Operator messages not yet shown to the agent; marks them delivered (call once per wake)."""
+        with self.db() as db:
+            rows = [dict(r) for r in db.execute(
+                "SELECT id,summary,body,at,parent FROM messages WHERE role='operator' AND status='open' ORDER BY id")]
+            if rows:
+                db.execute("UPDATE messages SET status='delivered' WHERE role='operator' AND status='open'")
+            return rows
+
+    def awaiting_operator(self):
+        with self.db() as db:
+            return [dict(r) for r in db.execute(
+                "SELECT id,summary,at FROM messages WHERE role='agent' AND status='open' ORDER BY id")]
+
+    def answer_message(self, msg_id, body):
+        with self.db() as db:
+            row = db.execute("SELECT id FROM messages WHERE id=? AND role='agent'", (msg_id,)).fetchone()
+            if not row:
+                raise LookupError(f"No agent message with id {msg_id}")
+            db.execute("UPDATE messages SET status='answered' WHERE id=?", (msg_id,))
+            return db.execute(
+                "INSERT INTO messages(cycle,role,status,summary,body,at,parent) "
+                "VALUES (NULL,'operator','open',?,?,?,?)",
+                (f"reply to #{msg_id}", str(body)[:8000], now(), msg_id),
+            ).lastrowid
+
+    def inbox(self, limit=50):
+        with self.db() as db:
+            return [dict(r) for r in db.execute(
+                "SELECT id,cycle,role,status,summary,body,at,parent FROM messages ORDER BY id DESC LIMIT ?",
+                (min(limit, 200),))]
 
     def recall(self, query="", limit=5):
         if not isinstance(query, str) or len(query) > 200:

@@ -68,6 +68,9 @@ def parser():
             "stop",
             "plan",
             "sandbox",
+            "inbox",
+            "reply",
+            "tell",
         ],
     )
     p.add_argument("--live", action="store_true", help="Enable real Nebius inference; demo is default")
@@ -108,6 +111,9 @@ def parser():
         action="store_true",
         help="Disable json_schema constrained decoding (required for DeepSeek-V4-Flash)",
     )
+    p.add_argument("--human-channel", action="store_true", help="Give the resident a contact_operator tool")
+    p.add_argument("--msg-id", type=int, help="Agent message id to reply to (reply command)")
+    p.add_argument("--text", default="", help="Message body (reply/tell commands)")
     p.add_argument("--port", type=int, default=8766)
     return p
 
@@ -161,7 +167,9 @@ async def operate(args, state, workspace):
         sandbox = Sandbox(workspace, name=args.sandbox_name, network=not args.sandbox_offline)
         await asyncio.to_thread(sandbox.ensure)
     web = None if args.no_web else WebTools(args.source_url)
-    tools = build_default_registry(workspace, state, args.knowledge, image, web=web, sandbox=sandbox)
+    tools = build_default_registry(
+        workspace, state, args.knowledge, image, web=web, sandbox=sandbox, human_channel=args.human_channel
+    )
     soul_path = args.soul
     loop = ResidentLoop(
         model,
@@ -176,6 +184,7 @@ async def operate(args, state, workspace):
         max_wake_seconds=args.max_wake_seconds,
         sandbox=sandbox,
         source_urls=args.source_url,
+        human_channel=args.human_channel,
     )
     tools.register("system_status", loop.system_status)
     try:
@@ -229,6 +238,18 @@ def main():
                 indent=2,
             )
         )
+    elif args.command == "inbox":
+        print(json.dumps(state.inbox(), indent=2))
+    elif args.command == "reply":
+        if args.msg_id is None or not args.text:
+            raise SystemExit("reply requires --msg-id and --text")
+        rid = state.answer_message(args.msg_id, args.text)
+        print(json.dumps({"replied_to": args.msg_id, "operator_message_id": rid}))
+    elif args.command == "tell":
+        if not args.text:
+            raise SystemExit("tell requires --text")
+        mid = state.post_message("operator", args.text[:80], args.text)
+        print(json.dumps({"operator_message_id": mid, "note": "Delivered to the resident on its next wake."}))
     elif args.command == "sandbox":
         sandbox = Sandbox(workspace, name=args.sandbox_name, network=not args.sandbox_offline)
         sandbox.ensure()

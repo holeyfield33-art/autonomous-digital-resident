@@ -682,3 +682,37 @@ def test_loop_wake_second_limit_and_run_wrapper(tmp_path):
     m2 = _Scripted([_dec([], intent="rest")])
     _, _, loop2 = _loop(tmp_path / "r", m2)
     asyncio.run(loop2.run(1))
+
+
+# ----------------------------- human collaboration channel -----------------------------
+def test_human_channel_two_way(tmp_path):
+    state = State(tmp_path)
+    # agent -> operator
+    out = state.contact_operator("Need the ASI catalog deployed", "Please publish v0.3 to the site.")
+    assert out["status"] == "sent_to_operator"
+    assert len(state.awaiting_operator()) == 1
+    # operator initiates + replies
+    state.post_message("operator", "direction", "Focus on AAC-12 evidence this week.")
+    mid = out["message_id"]
+    state.answer_message(mid, "Deployed. Here is the URL.")
+    # agent picks up both operator messages exactly once
+    first = state.take_operator_messages()
+    assert len(first) == 2 and any("Deployed" in m["body"] for m in first)
+    assert state.take_operator_messages() == []  # delivered only once
+    # the answered request is no longer awaiting
+    assert state.awaiting_operator() == []
+    with pytest.raises(ValueError):
+        state.contact_operator("")
+    with pytest.raises(LookupError):
+        state.answer_message(9999, "x")
+
+
+def test_human_channel_registered_and_in_facts(tmp_path):
+    state = State(tmp_path / "st")
+    reg = build_default_registry(tmp_path / "ws", state, human_channel=True)
+    assert "contact_operator" in reg.list_tools()
+    reg.call("contact_operator", summary="hi", body="there")
+    assert len(state.awaiting_operator()) == 1
+    # without the flag the tool is absent
+    reg2 = build_default_registry(tmp_path / "ws2", State(tmp_path / "st2"))
+    assert "contact_operator" not in reg2.list_tools()

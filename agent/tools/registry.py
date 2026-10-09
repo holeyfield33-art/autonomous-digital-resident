@@ -153,7 +153,8 @@ class ToolRegistry:
 
 
 def build_default_registry(
-    workspace, state=None, knowledge=None, image=None, web=None, sandbox=None, introspection=None
+    workspace, state=None, knowledge=None, image=None, web=None, sandbox=None, introspection=None,
+    human_channel=False,
 ):
     fs = FilesystemTools(workspace)
     artifacts = ArtifactTools(workspace)
@@ -183,6 +184,12 @@ def build_default_registry(
         reg.register("search_memory", state.search_memory, example={"query": "timestamp logger"})
         reg.register("cycle_history", state.cycle_history)
         reg.register("get_cycle", state.get_cycle, example={"cycle": 120})
+        if human_channel:
+            reg.register(
+                "contact_operator",
+                state.contact_operator,
+                example={"summary": "Need the ASI site deployed", "body": "Please publish the updated catalog."},
+            )
     if introspection:
         reg.register("system_status", introspection)
     if knowledge:

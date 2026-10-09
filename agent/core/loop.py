@@ -81,6 +81,7 @@ class ResidentLoop:
         max_wake_seconds=1200,
         sandbox=None,
         source_urls=(),
+        human_channel=False,
     ):
         if not 1 <= max_steps <= 40 or not 0 <= cycle_interval <= 3600:
             raise ValueError("Invalid cycle limits")
@@ -90,6 +91,7 @@ class ResidentLoop:
         self.mneme, self.cycle_interval, self.max_steps = mneme, cycle_interval, max_steps
         self.max_tool_calls, self.max_wake_seconds = max_tool_calls, max_wake_seconds
         self.sandbox, self.source_urls = sandbox, list(source_urls)
+        self.human_channel = human_channel
         self.started = _now()
         self.last_sync = {"mode": "local" if mneme is None else "unknown"}
 
@@ -211,6 +213,13 @@ class ResidentLoop:
             facts["sandbox"] = self.sandbox.status()
         if self.source_urls:
             facts["operator_suggested_sources"] = self.source_urls
+        if self.human_channel:
+            incoming = self.state.take_operator_messages()
+            if incoming:
+                facts["operator_messages"] = incoming
+            waiting = self.state.awaiting_operator()
+            if waiting:
+                facts["awaiting_operator_reply"] = waiting
         return facts
 
     def system_status(self):
