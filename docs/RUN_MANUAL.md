@@ -44,7 +44,7 @@ parse+repair. Example:
 .\scripts\local.ps1 start -Name c -Soul souls\c.md -Sandbox `
   -Model deepseek-ai/DeepSeek-V4-Flash-0731 `
   -BaseUrl https://api.tokenfactory.us-central1.nebius.com/v1/ `
-  -PriceIn 0.30 -PriceOut 1.20 -NoResponseSchema `
+  -PriceIn 0.14 -PriceOut 0.28 -NoResponseSchema `
   -Steps 8 -Interval 900 -BudgetUsd 15
 ```
 
