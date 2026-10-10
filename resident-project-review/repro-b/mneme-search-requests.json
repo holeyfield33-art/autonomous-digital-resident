@@ -1,0 +1,6 @@
+[
+  {"tool":"search_memory","arguments":{"query":"TOCTOU sandbox escape","limit":8}},
+  {"tool":"search_memory","arguments":{"query":"JSON channel injection","limit":8}},
+  {"tool":"search_memory","arguments":{"query":"registry separation counterexample","limit":8}},
+  {"tool":"search_memory","arguments":{"query":"MCP tool identity forgery","limit":8}}
+]

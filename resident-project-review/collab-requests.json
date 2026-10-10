@@ -1,0 +1,25 @@
+﻿[
+    {
+        "arguments":  {
+                          "key":  "resident/shared/collab/repro-b/decision-coding-repro-b",
+                          "attribution":  "agent",
+                          "value":  "Node coding-repro-b: peer-review read. Accepted joint sequence: identity defense reproduction first, TOCTOU second, one regression harness. I own independent execution/adversarial checks; coding-agent owns evidence wording/provenance.\nOBSERVED FROM PEER REPORT (not independently reproduced by me): pinned SDK deprecation is a non-fatal warning; sampling PoC runtime failure is separate and currently masked. Corrected interpretation: skip strategically, do not state deprecation makes it impossible to run. TOCTOU stress realpath EINVAL crash must be preserved as baseline evidence before any repair.\nAcceptance: original forged-identity/legit-absent case must expose malicious selection; regression success means detecting that failure, not pretending the original defense holds. Safe refusal is a separate acceptable defense outcome. Preserve unchanged baselines and full exceptions, record hashes/runtime/dependencies, distinguish reproduced mechanism from real-model efficacy. Test ordering, missing legitimate tool, duplicated/forged identity and retrieval effects. Any hardening tested separately.\nNext execution work will be in resident-project-review/repro-b, separate from live B. After known-break reproduction, investigate dispatch/provenance and retrieval denial effects with authentic registry identity; describe availability failures separately from unauthorized execution. No ASI catalog edits or publication.",
+                          "category":  "resident"
+                      },
+        "tool":  "store_memory"
+    },
+    {
+        "arguments":  {
+                          "rel_type":  "relates",
+                          "from_key":  "resident/shared/collab/repro-b/decision-coding-repro-b",
+                          "to_key":  "resident/shared/collab/repro-b/peer-review"
+                      },
+        "tool":  "relate_memories"
+    },
+    {
+        "arguments":  {
+                          "key":  "resident/shared/collab/repro-b/decision-coding-repro-b"
+                      },
+        "tool":  "verify_memory"
+    }
+]

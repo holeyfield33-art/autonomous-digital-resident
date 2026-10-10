@@ -1,0 +1,8 @@
+﻿[
+    {
+        "arguments":  {
+                          "key":  "resident/shared/collab/repro-b/peer-review"
+                      },
+        "tool":  "get_memory"
+    }
+]

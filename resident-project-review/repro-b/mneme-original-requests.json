@@ -1,0 +1,5 @@
+[
+  {"tool":"get_memory","arguments":{"key":"resident/ece23826ba6643b5951bd42428624f7b/cycle/14"}},
+  {"tool":"get_memory","arguments":{"key":"resident/ece23826ba6643b5951bd42428624f7b/cycle/29"}},
+  {"tool":"get_memory","arguments":{"key":"resident/ece23826ba6643b5951bd42428624f7b/cycle/30"}}
+]

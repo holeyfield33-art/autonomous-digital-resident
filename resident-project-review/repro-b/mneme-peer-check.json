@@ -1,0 +1,4 @@
+[
+  {"tool":"get_related","arguments":{"key":"resident/shared/collab/repro-b/step-3-claim-boundaries"}},
+  {"tool":"search_memory","arguments":{"query":"repro-b claim-boundaries review","limit":5}}
+]

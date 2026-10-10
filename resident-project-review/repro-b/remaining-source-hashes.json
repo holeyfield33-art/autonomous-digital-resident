@@ -1,0 +1,66 @@
+﻿[
+    {
+        "path":  "baseline\\remaining\\agent-deployment-security-checklist\\checklist.md",
+        "sha256":  "ac485fb07ef2e219cf7557eb77a10111567c696034a114717084b5a71dc5e71d"
+    },
+    {
+        "path":  "baseline\\remaining\\agent-deployment-security-checklist\\README.md",
+        "sha256":  "6fa43381837d91efc78103003ced8c583cb66e7fa2f97db48d491728ca701620"
+    },
+    {
+        "path":  "baseline\\remaining\\json-channel-injection\\json_channel_poc.py",
+        "sha256":  "42dbe846a34dc7a0354b043134ca0c676d32e9db8f4507277088100009547634"
+    },
+    {
+        "path":  "baseline\\remaining\\json-channel-injection\\README.md",
+        "sha256":  "a9befcc3b0f79e4e1c474bc24a4db4cd6e9163e1e4a573e40454813f54b88c50"
+    },
+    {
+        "path":  "baseline\\remaining\\langchain-tool-selection-audit\\forgery_poc.py",
+        "sha256":  "6e56a619806f50e3e0644cca28d7469e4310878b5d8b98e14a7c1857ccce363f"
+    },
+    {
+        "path":  "baseline\\remaining\\langchain-tool-selection-audit\\README.md",
+        "sha256":  "3e9857cd04bfa96d84519e943bcb82a3631394f2943d0e69beaad63dba041757"
+    },
+    {
+        "path":  "baseline\\remaining\\mcp-tool-identity-audit\\forgery_poc.py",
+        "sha256":  "25cc7638c064c47f9ea226d0abf5e012476121eef5802dfef4a3355fa2f8c654"
+    },
+    {
+        "path":  "baseline\\remaining\\mcp-tool-identity-audit\\README.md",
+        "sha256":  "ca6f374678b99a7f441f786b4151d51d874c28025be205e8c302dc8c6f738942"
+    },
+    {
+        "path":  "baseline\\remaining\\memory-poisoning-minja\\minja_poc.py",
+        "sha256":  "439f1db7e43f06e1dd620d4ec96fd3e55fc16eb24619044d5ca9f0fa14ce42a0"
+    },
+    {
+        "path":  "baseline\\remaining\\memory-poisoning-minja\\README.md",
+        "sha256":  "7813ec923dc4e5c37fbdd10409ce98f46a9c72111bd4699cae4e014332f06fbf"
+    },
+    {
+        "path":  "baseline\\remaining\\memory-poisoning-minja\\__pycache__\\minja_poc.cpython-311.pyc",
+        "sha256":  "be6cbfa0fb3fe2cfc322b90dc7ac2a6f4d236d65e1257c9a5121337012a52399"
+    },
+    {
+        "path":  "baseline\\remaining\\prompt-injection-tool-selection\\README.md",
+        "sha256":  "a8f54b3a00b972a26b949cddf1eed4ab715fb3cdbe949b9bb7f3dd81554a0e59"
+    },
+    {
+        "path":  "baseline\\remaining\\prompt-injection-tool-selection\\tool_selection_agent.py",
+        "sha256":  "072b7498c5f5d0942911bb1f14bf512b64de9c7aeea0c9f3362eadb202c3bfa0"
+    },
+    {
+        "path":  "baseline\\remaining\\prompt-injection-tool-selection\\__pycache__\\tool_selection_agent.cpython-311.pyc",
+        "sha256":  "f4e368ce510bc07bdb15bbaf2832f2c657c0bb2106c16a73af2c3212acf1c505"
+    },
+    {
+        "path":  "baseline\\remaining\\registry-separation-counterexample\\counterexample_poc.py",
+        "sha256":  "dc8d763709465fdcc0964825150586db8279be6d60bb8293d449178cce7b8edc"
+    },
+    {
+        "path":  "baseline\\remaining\\registry-separation-counterexample\\README.md",
+        "sha256":  "ab71a4ddab229dacd2eae9a347b13ee9122d6a8ee43820035847611b93c94fed"
+    }
+]

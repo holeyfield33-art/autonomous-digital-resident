@@ -1,0 +1,34 @@
+﻿[
+    {
+        "path":  "baseline\\toctou-sandbox-escape\\README.md",
+        "sha256":  "09e6cf6e0a5a9e94ba78ff35ad25316e659bc59efbcd8924993608e0e53d456c"
+    },
+    {
+        "path":  "baseline\\toctou-sandbox-escape\\secure_sandbox.py",
+        "sha256":  "67a3bb5b47921f4c8535187f2b953ce52c50ae800f435fb9282a1f8b0292587d"
+    },
+    {
+        "path":  "baseline\\toctou-sandbox-escape\\stress_test.py",
+        "sha256":  "e56734f74d9a089430ecbc66c75bc29a2c07c28e9e81b65e5c1eb7fb6a8654e1"
+    },
+    {
+        "path":  "baseline\\toctou-sandbox-escape\\toctou_escape.py",
+        "sha256":  "bba26649ddb8c2a620c605f99a46680817a19b21d4c57e99f084190bdebe8b1f"
+    },
+    {
+        "path":  "baseline\\toctou-sandbox-escape\\toctou_write_escape.py",
+        "sha256":  "cf68a496b11d9112cc99bf36f8a6845d6eed34ed1f6cf4a9b5f732ee64837ffb"
+    },
+    {
+        "path":  "baseline\\toctou-sandbox-escape\\write_stress_test.py",
+        "sha256":  "218a6f78b43aa83d48615cf4cdc8f4cf2950a05c52dc5cd7f2549e6e48fb82b8"
+    },
+    {
+        "path":  "baseline\\toolhijacker-defense-stress\\README.md",
+        "sha256":  "68161ece39e0b1eadb732b8e410af90485f4d4cec19ef26e8c5eb7b8f8749c46"
+    },
+    {
+        "path":  "baseline\\toolhijacker-defense-stress\\stress_test.py",
+        "sha256":  "9ea034cb4e650466c65d866a3494312655fec6deeaa8c17a0faa359e4268359f"
+    }
+]
