@@ -725,9 +725,11 @@ def test_fleet_snapshot_and_render(tmp_path):
     # two live residents + an archived round1 that must be ignored
     for name in ("a", "b"):
         s = State(root / name / "live")
-        cyc = s.begin("live"); s.finish(cyc, "completed", "did work", "a direction for " + name)
+        cyc = s.begin("live")
+        s.finish(cyc, "completed", "did work", "a direction for " + name)
         s.contact_operator(f"{name} needs a decision", "please advise")
-    arch = State(root / "round1" / "a" / "live"); arch.begin("live")
+    arch = State(root / "round1" / "a" / "live")
+    arch.begin("live")
     (root / "watchdog.log").write_text("WATCHDOG_UP ok\n", encoding="utf-8")
     snap = fleet.snapshot(root)
     names = {r["name"] for r in snap["residents"]}
