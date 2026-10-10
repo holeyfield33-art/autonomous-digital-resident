@@ -275,7 +275,8 @@ def test_bad_decision_is_retained_and_failure_survives(tmp_path):
     result = asyncio.run(loop.one_cycle())
     assert result["status"] == "protocol_error"
     kinds = [e["kind"] for e in state.events(1)]
-    assert kinds.count("decision_raw") == 2 and "parse_repair" in kinds and "protocol_error" in kinds
+    # original reply + two repair attempts, both failing -> protocol_error
+    assert kinds.count("decision_raw") == 3 and kinds.count("parse_repair") == 2 and "protocol_error" in kinds
     assert "protocol_error" in state.recall()[0]["value"]
 
 

@@ -413,32 +413,38 @@ class ResidentLoop:
         try:
             decision = parse_decision(raw, fixes)
         except ValueError as exc:
-            # One repair with full context. The repair exchange itself is not kept in the
-            # Resident's conversation, so it does not become part of its narrative.
-            problem = str(exc)
-            if finish == "length":
-                problem += " Your reply was cut off at the output limit: write large content in smaller parts."
-            self.state.event(cycle, "parse_repair", {"step": step, "error": problem})
-            repair = messages + [
-                {"role": "assistant", "content": raw[:6000]},
-                {
-                    "role": "user",
-                    "content": json.dumps(
-                        {
-                            "format_problem": problem,
-                            "instruction": "Resend the same decision as one valid JSON object matching the "
-                            "reply format. Keep your original summary; do not mention this formatting problem.",
-                        }
-                    ),
-                },
-            ]
-            raw = await self.model.chat(repair, cycle, schema=schema)
-            self.state.event(cycle, "decision_raw", {"step": step, "content": raw, "repaired": True})
-            try:
-                decision = parse_decision(raw, fixes)
-                fixes.append("repaired_by_model")
-            except ValueError as again:
-                self.state.event(cycle, "protocol_error", {"step": step, "error": str(again)})
+            # Up to two repairs with escalating, blunt instructions. The repair exchanges are not
+            # kept in the Resident's conversation, so they do not become part of its narrative.
+            decision = None
+            for attempt in range(2):
+                problem = str(exc)
+                if finish == "length":
+                    problem += (" Your reply was cut off at the output limit: write large content in "
+                                "smaller parts with append_file across steps, not inline in this reply.")
+                if "{" not in raw:
+                    instruction = ("Your previous reply was prose with no JSON. Output ONLY one JSON object "
+                                   "for your decision: start with { and end with }, with no explanation, no "
+                                   "code fences, and nothing before or after it.")
+                else:
+                    instruction = ("Resend the SAME decision as one valid JSON object matching the reply "
+                                   "format. Output only the object — start with { and end with }, no prose, "
+                                   "no code fences. Keep your original summary; do not mention this problem.")
+                self.state.event(cycle, "parse_repair", {"step": step, "attempt": attempt + 1, "error": problem})
+                repair = messages + [
+                    {"role": "assistant", "content": raw[:6000]},
+                    {"role": "user", "content": json.dumps({"format_problem": problem, "instruction": instruction})},
+                ]
+                raw = await self.model.chat(repair, cycle, schema=schema)
+                finish = (getattr(self.model, "last_usage", None) or {}).get("finish_reason")
+                self.state.event(cycle, "decision_raw", {"step": step, "content": raw, "repaired": attempt + 1})
+                try:
+                    decision = parse_decision(raw, fixes)
+                    fixes.append(f"repaired_by_model_attempt_{attempt + 1}")
+                    break
+                except ValueError as again:
+                    exc = again
+            if decision is None:
+                self.state.event(cycle, "protocol_error", {"step": step, "error": str(exc)})
                 return None
         if fixes:
             self.state.event(cycle, "decision_normalized", {"step": step, "fixes": fixes})
