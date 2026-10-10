@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('start','stop','pause','resume','status','observe','inbox','reply','tell')][string]$Action = 'status',
+    [ValidateSet('start','stop','pause','resume','status','observe','inbox','reply','tell','fleet')][string]$Action = 'status',
     # Empty = the original resident (.resident\live, workspace\live, resident-sandbox).
     # A name runs a separate resident: .resident\<Name>\live, workspace\<Name>, resident-sandbox-<Name>.
     [ValidatePattern('^$|^[a-z0-9][a-z0-9-]{0,30}$')][string]$Name = '',
@@ -18,6 +18,7 @@ param(
     [switch]$SandboxOffline,
     [switch]$NoWeb,
     [switch]$HumanChannel,
+    [string]$SourceUrl = '',
     [int]$MsgId = 0,
     [string]$Text = '',
     [int]$Port = 8766
@@ -56,6 +57,10 @@ try {
         & $pythonPath -m agent.cli observe --live --port $Port @scope
         return
     }
+    if ($Action -eq 'fleet') {
+        & $pythonPath -m agent.cli fleet --port $Port
+        return
+    }
     if ($Soul -and -not (Test-Path -LiteralPath $Soul -PathType Leaf)) { throw "Soul file not found: $Soul" }
     if ($Name -and -not $Soul) { throw 'A named resident needs -Soul so its identity is explicit.' }
     if (Test-Path -LiteralPath $recordPath) {
@@ -80,6 +85,7 @@ try {
     if ($SandboxOffline) { $arguments += '--sandbox-offline' }
     if ($NoWeb) { $arguments += '--no-web' }
     if ($HumanChannel) { $arguments += '--human-channel' }
+    if ($SourceUrl) { $arguments += @('--source-url',$SourceUrl) }
     if ($MnemeConfig) { $arguments += @('--mneme-config',('"' + $MnemeConfig + '"')) }
     if ($ExecutionImage) { $arguments += @('--execution-image',$ExecutionImage) }
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'

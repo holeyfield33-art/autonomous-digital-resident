@@ -71,6 +71,7 @@ def parser():
             "inbox",
             "reply",
             "tell",
+            "fleet",
         ],
     )
     p.add_argument("--live", action="store_true", help="Enable real Nebius inference; demo is default")
@@ -202,6 +203,11 @@ def main():
         raise SystemExit("Demo cannot use live inference")
     if not 0 <= args.cycles <= 10000 or not 0 <= args.interval <= 3600 or not 1024 <= args.port <= 65535:
         raise SystemExit("Invalid cycle, interval or port limit")
+    if args.command == "fleet":
+        from agent.runtime.fleet import serve as serve_fleet
+
+        serve_fleet(args.home if args.home.name == ".resident" else Path(".resident"), args.port)
+        return
     cap = None
     if args.budget_usd is not None:
         cap = Decimal(args.budget_usd)

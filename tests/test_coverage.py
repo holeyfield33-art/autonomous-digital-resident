@@ -716,3 +716,23 @@ def test_human_channel_registered_and_in_facts(tmp_path):
     # without the flag the tool is absent
     reg2 = build_default_registry(tmp_path / "ws2", State(tmp_path / "st2"))
     assert "contact_operator" not in reg2.list_tools()
+
+
+# ----------------------------- fleet command center -----------------------------
+def test_fleet_snapshot_and_render(tmp_path):
+    from agent.runtime import fleet
+    root = tmp_path / ".resident"
+    # two live residents + an archived round1 that must be ignored
+    for name in ("a", "b"):
+        s = State(root / name / "live")
+        cyc = s.begin("live"); s.finish(cyc, "completed", "did work", "a direction for " + name)
+        s.contact_operator(f"{name} needs a decision", "please advise")
+    arch = State(root / "round1" / "a" / "live"); arch.begin("live")
+    (root / "watchdog.log").write_text("WATCHDOG_UP ok\n", encoding="utf-8")
+    snap = fleet.snapshot(root)
+    names = {r["name"] for r in snap["residents"]}
+    assert names == {"a", "b"}  # round1 excluded
+    assert len(snap["messages"]) == 2 and snap["host"]["watchdog"].startswith("WATCHDOG_UP")
+    html = fleet.render(root)
+    assert "Resident Command Center" in html
+    assert "a needs a decision" in html and "reply -Name a" in html
