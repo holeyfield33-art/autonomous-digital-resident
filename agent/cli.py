@@ -22,6 +22,7 @@ from agent.models.nebius import (
     NebiusClient,
 )
 from agent.runtime.state import State
+from agent.runtime.team import TeamChannel
 from agent.tools.registry import build_default_registry
 from agent.tools.sandbox import Sandbox
 from agent.tools.web import WebTools
@@ -113,6 +114,8 @@ def parser():
         help="Disable json_schema constrained decoding (required for DeepSeek-V4-Flash)",
     )
     p.add_argument("--human-channel", action="store_true", help="Give the resident a contact_operator tool")
+    p.add_argument("--team-root", type=Path, help="Shared team directory; enables the message_team broadcast channel")
+    p.add_argument("--team-member", help="This resident's name on the team (defaults to its home name)")
     p.add_argument("--msg-id", type=int, help="Agent message id to reply to (reply command)")
     p.add_argument("--text", default="", help="Message body (reply/tell commands)")
     p.add_argument("--port", type=int, default=8766)
@@ -168,8 +171,14 @@ async def operate(args, state, workspace):
         sandbox = Sandbox(workspace, name=args.sandbox_name, network=not args.sandbox_offline)
         await asyncio.to_thread(sandbox.ensure)
     web = None if args.no_web else WebTools(args.source_url)
+    team_channel = None
+    if args.team_root:
+        home = Path(args.home)
+        member = args.team_member or (home.parent.name if home.name in {"live", "demo"} else home.name)
+        team_channel = TeamChannel(Path(args.team_root) / "team.sqlite", member)
     tools = build_default_registry(
-        workspace, state, args.knowledge, image, web=web, sandbox=sandbox, human_channel=args.human_channel
+        workspace, state, args.knowledge, image, web=web, sandbox=sandbox,
+        human_channel=args.human_channel, team_channel=team_channel,
     )
     soul_path = args.soul
     loop = ResidentLoop(
@@ -186,6 +195,7 @@ async def operate(args, state, workspace):
         sandbox=sandbox,
         source_urls=args.source_url,
         human_channel=args.human_channel,
+        team_channel=team_channel,
     )
     tools.register("system_status", loop.system_status)
     try:

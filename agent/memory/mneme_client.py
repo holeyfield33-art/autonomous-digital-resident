@@ -87,11 +87,11 @@ class MnemeClient:
         pass  # Each SDK session is closed in its originating async context.
 
 
-async def sync_outbox(state, client):
+async def sync_outbox(state, client, limit=25):
     if client is None:
         return {"mode": "local", "synced": 0}
     count = 0
-    for item in state.pending():
+    for item in state.pending(limit):
         try:
             await client.ensure_memory(item["key"], item["value"])
             state.memory_result(item["key"])
@@ -99,4 +99,4 @@ async def sync_outbox(state, client):
         except Exception as exc:
             state.memory_result(item["key"], type(exc).__name__)
             return {"mode": "degraded_local", "synced": count, "error_type": type(exc).__name__}
-    return {"mode": "mneme", "synced": count}
+    return {"mode": "mneme", "synced": count, "pending": len(state.pending(1000))}

@@ -26,7 +26,7 @@ Open **http://127.0.0.1:8766**. Both demo cycles create canned continuity artifa
 
 ## Live, self-directed operation
 
-Create a private `.env` using [.env.example](.env.example). Only live mode needs `NEBIUS_API_KEY`. Optional Mneme uses authenticated loopback MCP; this workspace's service is at `http://127.0.0.1:8010/mcp/`.
+Create a private `.env` using [.env.example](.env.example). Only live mode needs `NEBIUS_API_KEY`. Optional Mneme uses authenticated loopback MCP at `http://127.0.0.1:8010/mcp/` with the Resident's own agent key ([setup](docs/mneme.md)).
 
 ```powershell
 # If an operator STOP/PAUSE marker exists:
@@ -84,9 +84,9 @@ The controller runs on the host and the local operator is trusted. This is not a
 
 ## Memory and identity
 
-The full bounded `SOUL.md` is loaded every cycle. Recent local memories and past directions survive restarts. Mneme synchronizes this Resident's exact keys with store/read/integrity checks. An outage leaves a durable outbox; retries synchronize memory, not model requests or tools. Unrelated personal archives are never listed or forwarded to Nebius.
+The full `SOUL.md` is loaded every wake, together with controller facts and recent cycles. Every wake's decisions, actions, outcomes and file changes are recorded by the controller in local SQLite (full-text searchable through `search_memory`, `cycle_history` and `get_cycle`) and synced to Mneme.
 
-This local Mneme profile uses keyword fallback while offline. Do not describe it as live semantic embeddings. [Mneme guide](docs/mneme.md).
+The Resident has its **own Mneme key and namespace** (`agent-resident`), created with Mneme's `scripts/agent_key.py`, so it never holds the personal key and cannot see the personal archive. An outage or rejected key leaves a durable local outbox; `resident sync --live --mneme` drains it. Local Mneme runs offline, so search is keyword-based. [Mneme guide](docs/mneme.md).
 
 ## Evidence, docs and submission
 

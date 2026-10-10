@@ -154,7 +154,7 @@ class ToolRegistry:
 
 def build_default_registry(
     workspace, state=None, knowledge=None, image=None, web=None, sandbox=None, introspection=None,
-    human_channel=False,
+    human_channel=False, team_channel=None,
 ):
     fs = FilesystemTools(workspace)
     artifacts = ArtifactTools(workspace)
@@ -190,6 +190,18 @@ def build_default_registry(
                 state.contact_operator,
                 example={"summary": "Need the ASI site deployed", "body": "Please publish the updated catalog."},
             )
+    if team_channel is not None:
+        reg.register(
+            "message_team",
+            team_channel.post,
+            "Broadcast a message to every teammate; they see it on their next wake.",
+            example={"summary": "Claiming the spectral-stability thread", "body": "I'll test lambda_1=1 numerically; who has retrieval?"},
+        )
+        reg.register(
+            "read_team",
+            team_channel.recent,
+            "Read the recent shared team message history (any sender), newest first.",
+        )
     if introspection:
         reg.register("system_status", introspection)
     if knowledge:

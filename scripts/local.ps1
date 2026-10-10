@@ -18,6 +18,7 @@ param(
     [switch]$SandboxOffline,
     [switch]$NoWeb,
     [switch]$HumanChannel,
+    [string]$TeamRoot = '',
     [string]$SourceUrl = '',
     [int]$MsgId = 0,
     [string]$Text = '',
@@ -85,6 +86,7 @@ try {
     if ($SandboxOffline) { $arguments += '--sandbox-offline' }
     if ($NoWeb) { $arguments += '--no-web' }
     if ($HumanChannel) { $arguments += '--human-channel' }
+    if ($TeamRoot) { $arguments += @('--team-root',$TeamRoot) }
     if ($SourceUrl) { $arguments += @('--source-url',$SourceUrl) }
     if ($MnemeConfig) { $arguments += @('--mneme-config',('"' + $MnemeConfig + '"')) }
     if ($ExecutionImage) { $arguments += @('--execution-image',$ExecutionImage) }
