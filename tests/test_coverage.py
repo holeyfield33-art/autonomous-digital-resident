@@ -724,7 +724,7 @@ def test_fleet_snapshot_and_render(tmp_path):
     root = tmp_path / ".resident"
     # two live residents + an archived round1 that must be ignored
     for name in ("a", "b"):
-        s = State(root / name / "live")
+        s = State(root / name / "live", 15_000_000)  # a raised cap, like a live agent
         cyc = s.begin("live")
         s.finish(cyc, "completed", "did work", "a direction for " + name)
         s.contact_operator(f"{name} needs a decision", "please advise")

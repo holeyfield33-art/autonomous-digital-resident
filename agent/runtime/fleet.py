@@ -40,7 +40,7 @@ def snapshot(resident_root):
     data = {"residents": [], "host": {}, "messages": []}
     for name, home in discover(resident_root):
         try:
-            st = State(home)
+            st = State(home, None)  # None = keep the durable cap; a number would try to lower it and raise
             b = st.budget()
             rt = st.runtime()
             cycles = st.recent(6)
