@@ -443,3 +443,66 @@ def test_long_summary_is_truncated_not_rejected():
     decision = parse_decision(raw, fixes)
     assert len(decision.summary) == 2000 and len(decision.direction) == 500
     assert "truncated_summary_to_2000_chars" in fixes
+
+
+@pytest.mark.parametrize("last_only", [False, True])
+def test_missing_action_braces_preserves_arguments(last_only):
+    content = 'literal },{ and ]} with "quotes" and newline\n'
+    base = {"summary": "s", "direction": "d", "intent": "build", "actions": [
+        {"name": "write_file", "arguments": {"path": "a.txt", "content": content}},
+        {"name": "python", "arguments": {"code": "print({1: [2, 3]})"}},
+    ]}
+    raw = json.dumps(base)
+    raw = raw.replace('}}]}', '}]}')
+    if not last_only:
+        raw = raw.replace('}}, {"name"', '}, {"name"')
+    fixes = []
+    decision = parse_decision(raw, fixes)
+    assert [a.model_dump() for a in decision.actions] == base["actions"]
+    assert any("action_objects" in f for f in fixes)
+
+
+@pytest.mark.parametrize("raw", [
+    '{"summary":"s","direction":"d","intent":"build","actions":[{"name":"python","arguments":{"code":"cut',
+    '{"summary":"s","direction":"d","intent":"build","actions":[{"name":"python","arguments":{"code":"x"}]} trailing',
+    '{"summary":"s","direction":"d","intent":"build","actions":[{"name":"python","arguments":{"code":"x"}',
+    '{"summary":"s","direction":"d","intent":"build","actions":[{"name":"python","arguments":{"nested":{"x":1}]}',
+])
+def test_action_brace_recovery_rejects_ambiguous_or_truncated_values(raw):
+    with pytest.raises(ValueError):
+        parse_decision(raw)
+
+
+def test_repair_keeps_full_response_and_records_finish_reason(tmp_path):
+    malformed = '{"summary":"' + 'x' * 7000
+    replies = []
+
+    class Model(DemoModel):
+        last_usage = {"finish_reason": "length"}
+
+        async def chat(self, messages, cycle, schema=None):
+            replies.append(messages)
+            if len(replies) == 1:
+                return malformed
+            self.last_usage = {"finish_reason": "stop"}
+            return json.dumps({"summary": "s", "direction": "d", "intent": "rest", "actions": []})
+
+    state = State(tmp_path / "state")
+    soul = tmp_path / "SOUL.md"
+    soul.write_text("Explore.")
+    workspace = tmp_path / "workspace"
+    loop = ResidentLoop(Model(), state, build_default_registry(workspace, state), soul, workspace)
+    assert asyncio.run(loop.one_cycle())["status"] == "rested"
+    assert replies[1][-2]["content"] == malformed
+    assert "Close BOTH" in replies[1][-1]["content"]
+    assert state.last_event(1, "decision_raw")["finish_reason"] == "stop"
+
+
+def test_missing_outer_brace_after_complete_actions():
+    base = {"summary": "s", "direction": "d", "intent": "build", "actions": [
+        {"name": "python", "arguments": {"code": "print(42)"}},
+    ]}
+    fixes = []
+    decision = parse_decision(json.dumps(base)[:-1], fixes)
+    assert decision.actions[0].arguments == {"code": "print(42)"}
+    assert fixes == ["closed_decision_object"]

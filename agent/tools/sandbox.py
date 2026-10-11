@@ -48,11 +48,17 @@ def _clip(data):
 
 
 class Sandbox:
-    def __init__(self, workspace, name="resident-sandbox", network=True, memory="2g", cpus="2"):
+    def __init__(self, workspace, name="resident-sandbox", network=True, memory="2g", cpus="2",
+                 extra_mounts=None):
         if not isinstance(name, str) or not NAME.match(name):
             raise ValueError("Sandbox name must be 1-63 characters: letters, digits, '_', '.', '-'")
         self.workspace = Path(workspace).resolve()
         self.name, self.network, self.memory, self.cpus = name, network, memory, cpus
+        # extra_mounts: list of (host_path, container_path, read_only) bind mounts, e.g. a shared handoff dir.
+        self.extra_mounts = []
+        for host, target, ro in (extra_mounts or []):
+            Path(host).mkdir(parents=True, exist_ok=True)
+            self.extra_mounts.append((Path(host).resolve(), target, bool(ro)))
         self.volume = f"{name}-deps"
         self.docker = shutil.which("docker")
         self._ready_at = None
@@ -117,6 +123,11 @@ class Sandbox:
             "--mount", f"type=volume,source={self.volume},target={DEPS}",
             "--restart", "unless-stopped",
         ]
+        for host, target, ro in self.extra_mounts:
+            spec = f"type=bind,source={host},target={target}"
+            if ro:
+                spec += ",readonly"
+            args += ["--mount", spec]
         for key, value in DEPS_ENV.items():
             args += ["-e", f"{key}={value}"]
         if not self.network:

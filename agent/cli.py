@@ -116,6 +116,8 @@ def parser():
     p.add_argument("--human-channel", action="store_true", help="Give the resident a contact_operator tool")
     p.add_argument("--team-root", type=Path, help="Shared team directory; enables the message_team broadcast channel")
     p.add_argument("--team-member", help="This resident's name on the team (defaults to its home name)")
+    p.add_argument("--shared-handoff", type=Path, help="Host dir bind-mounted at /workspace/handoff for cross-resident artifact handoff")
+    p.add_argument("--handoff-ro", action="store_true", help="Mount the shared handoff read-only (reviewers); omit for writers")
     p.add_argument("--msg-id", type=int, help="Agent message id to reply to (reply command)")
     p.add_argument("--text", default="", help="Message body (reply/tell commands)")
     p.add_argument("--port", type=int, default=8766)
@@ -168,7 +170,11 @@ async def operate(args, state, workspace):
     image = args.execution_image or os.environ.get("RESIDENT_EXECUTION_IMAGE")
     sandbox = None
     if args.sandbox:
-        sandbox = Sandbox(workspace, name=args.sandbox_name, network=not args.sandbox_offline)
+        extra_mounts = None
+        if args.shared_handoff:
+            extra_mounts = [(str(Path(args.shared_handoff).resolve()), "/workspace/handoff", args.handoff_ro)]
+        sandbox = Sandbox(workspace, name=args.sandbox_name, network=not args.sandbox_offline,
+                          extra_mounts=extra_mounts)
         await asyncio.to_thread(sandbox.ensure)
     web = None if args.no_web else WebTools(args.source_url)
     team_channel = None

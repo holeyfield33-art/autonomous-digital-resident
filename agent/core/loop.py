@@ -436,14 +436,24 @@ class ResidentLoop:
                     instruction = ("Resend the SAME decision as one valid JSON object matching the reply "
                                    "format. Output only the object — start with { and end with }, no prose, "
                                    "no code fences. Keep your original summary; do not mention this problem.")
+                instruction += (
+                    " Each action must have this nesting: "
+                    '{"name":"tool_name","arguments":{...}}. Close BOTH the arguments '
+                    "object and the action object before the next action or closing actions array."
+                )
+                if attempt:
+                    instruction += (
+                        " The first repair still failed. Reconstruct the JSON structure instead of "
+                        "copying the malformed punctuation; use fewer actions if necessary."
+                    )
                 self.state.event(cycle, "parse_repair", {"step": step, "attempt": attempt + 1, "error": problem})
                 repair = messages + [
-                    {"role": "assistant", "content": raw[:6000]},
+                    {"role": "assistant", "content": raw},
                     {"role": "user", "content": json.dumps({"format_problem": problem, "instruction": instruction})},
                 ]
                 raw = await self.model.chat(repair, cycle, schema=schema)
                 finish = (getattr(self.model, "last_usage", None) or {}).get("finish_reason")
-                self.state.event(cycle, "decision_raw", {"step": step, "content": raw, "repaired": attempt + 1})
+                self.state.event(cycle, "decision_raw", {"step": step, "content": raw, "repaired": attempt + 1, "finish_reason": finish})
                 try:
                     decision = parse_decision(raw, fixes)
                     fixes.append(f"repaired_by_model_attempt_{attempt + 1}")

@@ -2,11 +2,39 @@
 operator<->agent message channel. Read-only; replies are sent with the CLI commands shown inline."""
 
 import json
+import os
 import shutil
+import subprocess
 from datetime import datetime, timezone
 from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+_SKIP_DIRS = {".git", "node_modules", "__pycache__", ".pytest_cache", "dist", ".venv", ".mypy_cache"}
+
+
+def _workspace_writes(ws_dir, limit=12):
+    """(recent files newest-first, total source file count) under a workspace, pruning junk dirs."""
+    files = []
+    total = 0
+    for root, dirs, names in os.walk(ws_dir):
+        dirs[:] = [d for d in dirs if d not in _SKIP_DIRS and not d.endswith(".egg-info")]
+        for nm in names:
+            if nm.endswith((".pyc", ".pyo")):
+                continue
+            fp = Path(root) / nm
+            try:
+                mt = fp.stat().st_mtime
+            except OSError:
+                continue
+            total += 1
+            files.append((mt, fp.relative_to(ws_dir).as_posix()))
+    files.sort(reverse=True)
+    recent = [
+        {"path": rel, "age": _age(datetime.fromtimestamp(mt, timezone.utc).isoformat())}
+        for mt, rel in files[:limit]
+    ]
+    return recent, total
 
 from agent.runtime.state import State
 
@@ -85,6 +113,29 @@ def snapshot(resident_root):
     except Exception:
         pass
     data["host"] = {"c_free": cfree, "c_total": ctot, "d_free": dfree, "d_total": dtot, "watchdog": wline}
+    # Shared office: recent writes per workspace dir (surfaces shared-sandbox activity the cards miss).
+    repo_root = Path(resident_root).resolve().parent
+    ws_base = repo_root / "workspace"
+    workspaces = []
+    if ws_base.is_dir():
+        for d in sorted(p for p in ws_base.iterdir() if p.is_dir()):
+            recent, total = _workspace_writes(d)
+            workspaces.append({"name": d.name, "recent": recent, "count": total})
+    data["workspaces"] = workspaces
+    # Running resident sandboxes (several residents may share one).
+    sandboxes = []
+    try:
+        out = subprocess.run(
+            ["docker", "ps", "--filter", "name=resident-sandbox", "--format", "{{.Names}}|{{.Status}}"],
+            capture_output=True, timeout=6,
+        ).stdout.decode(errors="replace")
+        sandboxes = [
+            {"name": line.split("|", 1)[0], "status": line.split("|", 1)[1]}
+            for line in out.strip().splitlines() if "|" in line
+        ]
+    except Exception:
+        pass
+    data["sandboxes"] = sandboxes
     return data
 
 
@@ -122,6 +173,20 @@ def render(resident_root):
     def disk(free, tot):
         return f"{free}/{tot} GB free" if free is not None else "—"
     low = "warn" if (h.get("c_free") or 99) < 8 else ""
+    office = ""
+    for w in d.get("workspaces", []):
+        writes = "".join(
+            f"<li><code>{escape(x['path'])}</code> <span class='badge'>{escape(x['age'])}</span></li>"
+            for x in w["recent"]
+        ) or "<li class='muted'>no files yet</li>"
+        office += (
+            f"<article><div class='row'><h3>{escape(w['name'])}/</h3>"
+            f"<span class='badge'>{w['count']} files</span></div>"
+            f"<ul class='feed'>{writes}</ul></article>"
+        )
+    sb = " · ".join(
+        f"{escape(s['name'])} ({escape(s['status'])})" for s in d.get("sandboxes", [])
+    ) or "none running"
     return (
         "<!doctype html><html lang='en'><meta charset='utf-8'><meta name='viewport' content='width=device-width'>"
         "<meta http-equiv='refresh' content='15'><title>Resident Command Center</title><style>"
@@ -147,6 +212,8 @@ def render(resident_root):
         f"<span>watchdog: {escape((h.get('watchdog') or 'not running')[:80])}</span>"
         "<span>auto-refresh 15s · read-only</span></div>"
         f"<div class='grid'>{''.join(cards) or '<p>No live residents.</p>'}</div>"
+        f"<section><h2>Shared office — recent writes</h2><div class='grid'>{office or '<p>No workspaces.</p>'}</div>"
+        f"<p><small>sandboxes: {escape(sb)}</small></p></section>"
         f"<section><h2>Open requests to you</h2>{msg_html}</section>"
         f"<section><h2>Activity</h2><ul class='feed'>{feed}</ul></section>"
         "</main></html>"

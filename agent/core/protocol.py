@@ -77,6 +77,79 @@ def _first_object(text):
     return None  # unterminated (e.g. output truncated at the token limit)
 
 
+def _close_decision_objects(text):
+    """Recover only missing action-object braces after complete name/arguments fields.
+
+    Every value is decoded by the JSON decoder. Never repair strings, argument objects,
+    truncated values, or incomplete arrays. An outer brace may be supplied only
+    immediately after a fully decoded actions array.
+    """
+    decoder = json.JSONDecoder(strict=False)
+    inserted = []
+
+    def ws(i):
+        while i < len(text) and text[i].isspace():
+            i += 1
+        return i
+
+    def object_at(i, action=False):
+        if text[i:i + 1] != "{":
+            raise ValueError("Expected object")
+        result = {}
+        i = ws(i + 1)
+        while text[i:i + 1] != "}":
+            key, end = decoder.raw_decode(text, i)
+            if not isinstance(key, str) or key in result:
+                raise ValueError("Invalid or duplicate key")
+            i = ws(end)
+            if text[i:i + 1] != ":":
+                raise ValueError("Expected colon")
+            i = ws(i + 1)
+            if not action and key == "actions":
+                value, i = actions_at(i)
+            else:
+                value, i = decoder.raw_decode(text, i)
+            result[key] = value
+            i = ws(i)
+            if not action and key == "actions" and i == len(text):
+                inserted.append("decision")
+                return result, i
+            if action and set(result) == {"name", "arguments"} and isinstance(result["arguments"], dict):
+                next_action = text[i:i + 1] == "," and text[ws(i + 1):ws(i + 1) + 1] == "{"
+                if next_action or text[i:i + 1] == "]":
+                    inserted.append("action")
+                    return result, i
+            if text[i:i + 1] == "}":
+                break
+            if text[i:i + 1] != ",":
+                raise ValueError("Expected comma")
+            i = ws(i + 1)
+        return result, i + 1
+
+    def actions_at(i):
+        if text[i:i + 1] != "[":
+            raise ValueError("Expected actions array")
+        result = []
+        i = ws(i + 1)
+        while text[i:i + 1] != "]":
+            value, i = object_at(i, action=True)
+            result.append(value)
+            i = ws(i)
+            if text[i:i + 1] == "]":
+                break
+            if text[i:i + 1] != ",":
+                raise ValueError("Expected action separator")
+            i = ws(i + 1)
+        return result, i + 1
+
+    data, end = object_at(ws(0))
+    if ws(end) != len(text) or not inserted:
+        raise ValueError("Not a complete repaired decision")
+    # Validate before normalization: do not turn an ambiguous structure into an action.
+    Decision.model_validate(data)
+    return data, inserted
+
+
 def _load(raw, fixes):
     try:
         return json.loads(raw)
@@ -99,6 +172,15 @@ def _load(raw, fixes):
         fixes.append("allowed_control_characters_in_strings")
         return data
     except json.JSONDecodeError:
+        pass
+    try:
+        data, inserted = _close_decision_objects(text)
+        if "action" in inserted:
+            fixes.append(f"closed_{inserted.count('action')}_action_objects")
+        if "decision" in inserted:
+            fixes.append("closed_decision_object")
+        return data
+    except (ValueError, IndexError, RecursionError):
         pass
     trailing = re.sub(r",\s*([}\]])", r"\1", text)
     try:

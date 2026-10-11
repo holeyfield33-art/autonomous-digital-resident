@@ -390,7 +390,11 @@ class FilesystemTools:
         for file in self._walk(self.workspace):
             if len(result) >= QUOTA_FILES:
                 break
-            info = file.stat()
+            try:
+                info = file.stat()
+            except FileNotFoundError:
+                # Shared-workspace installs can remove an entry after enumeration.
+                continue
             result[self._rel(file)] = (info.st_size, info.st_mtime_ns)
         return result
 
@@ -411,14 +415,36 @@ class FilesystemTools:
         }
 
     def summary(self, recent=10):
-        files = list(self._walk(self.workspace))
-        top = sorted(
-            (p.name + ("/" if p.is_dir() else "") for p in self.workspace.iterdir() if not p.name.startswith(".")),
-        )
-        newest = sorted(files, key=lambda f: f.stat().st_mtime, reverse=True)[:recent]
+        # Capture metadata once: teammates may replace/remove files during this scan.
+        # Only disappearing files are expected; permissions and other IO errors stay visible.
+        files = []
+        missing = 0
+        for path in self._walk(self.workspace):
+            try:
+                info = path.stat()
+            except FileNotFoundError:
+                missing += 1
+                continue
+            files.append((path, info))
+        top = []
+        with os.scandir(self.workspace) as entries:
+            for entry in entries:
+                if entry.name.startswith("."):
+                    continue
+                try:
+                    top.append(entry.name + ("/" if entry.is_dir(follow_symlinks=False) else ""))
+                except FileNotFoundError:
+                    continue
+        top.sort()
+        newest = sorted(files, key=lambda item: item[1].st_mtime, reverse=True)[:recent]
         return {
             "files": len(files),
-            "bytes": sum(f.stat().st_size for f in files),
+            "bytes": sum(info.st_size for _, info in files),
             "top_level": top[:80],
-            "recently_modified": [{"path": self._rel(f), "modified": _mtime(f)} for f in newest],
+            "recently_modified": [
+                {"path": self._rel(path),
+                 "modified": datetime.fromtimestamp(info.st_mtime, timezone.utc).isoformat(timespec="seconds")}
+                for path, info in newest
+            ],
+            "disappeared_during_scan": missing,
         }

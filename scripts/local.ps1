@@ -12,6 +12,7 @@ param(
     [string]$MnemeConfig = '',
     [string]$ExecutionImage = '',
     [int]$Interval = 300,
+    [int]$Cycles = 0,
     [int]$Steps = 12,
     [string]$BudgetUsd = '15',
     [switch]$Sandbox,
@@ -19,6 +20,10 @@ param(
     [switch]$NoWeb,
     [switch]$HumanChannel,
     [string]$TeamRoot = '',
+    [string]$SharedHandoff = '',
+    [switch]$HandoffReadOnly,
+    [string]$Workspace = '',
+    [string]$SandboxName = '',
     [string]$SourceUrl = '',
     [int]$MsgId = 0,
     [string]$Text = '',
@@ -30,7 +35,10 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $pythonPath = Join-Path $repoRoot '.venv\Scripts\python.exe'
 if ($Name) {
     $privateRoot = Join-Path $repoRoot ".resident\$Name\live"
-    $scope = @('--home',".resident/$Name",'--workspace',"workspace/$Name",'--sandbox-name',"resident-sandbox-$Name")
+    # A shared office: pass -Workspace/-SandboxName so several named residents share one workspace+sandbox.
+    $ws = if ($Workspace) { $Workspace } else { "workspace/$Name" }
+    $sb = if ($SandboxName) { $SandboxName } else { "resident-sandbox-$Name" }
+    $scope = @('--home',".resident/$Name",'--workspace',$ws,'--sandbox-name',$sb)
 } else {
     $privateRoot = Join-Path $repoRoot '.resident\live'
     $scope = @()
@@ -75,7 +83,7 @@ try {
     New-Item -ItemType Directory -Force -Path $privateRoot | Out-Null
     & $pythonPath -m agent.cli resume --live @scope
     if ($LASTEXITCODE -ne 0) { throw 'Could not clear operator STOP/PAUSE markers.' }
-    $arguments = @('-m','agent.cli','run','--live','--mneme','--cycles','0','--interval',"$Interval",'--steps',"$Steps",'--budget-usd',$BudgetUsd) + $scope
+    $arguments = @('-m','agent.cli','run','--live','--mneme','--cycles',"$Cycles",'--interval',"$Interval",'--steps',"$Steps",'--budget-usd',$BudgetUsd) + $scope
     if ($Soul) { $arguments += @('--soul',('"' + $Soul + '"')) }
     if ($Model) { $arguments += @('--model',$Model) }
     if ($BaseUrl) { $arguments += @('--base-url',$BaseUrl) }
@@ -87,6 +95,8 @@ try {
     if ($NoWeb) { $arguments += '--no-web' }
     if ($HumanChannel) { $arguments += '--human-channel' }
     if ($TeamRoot) { $arguments += @('--team-root',$TeamRoot) }
+    if ($SharedHandoff) { $arguments += @('--shared-handoff',$SharedHandoff) }
+    if ($HandoffReadOnly) { $arguments += '--handoff-ro' }
     if ($SourceUrl) { $arguments += @('--source-url',$SourceUrl) }
     if ($MnemeConfig) { $arguments += @('--mneme-config',('"' + $MnemeConfig + '"')) }
     if ($ExecutionImage) { $arguments += @('--execution-image',$ExecutionImage) }
